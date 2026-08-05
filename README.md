@@ -1,32 +1,66 @@
-# React + TypeScript + Vite
+# SGS App
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Aplicação web em React, TypeScript e Vite para apoiar a gestão de operações sociais e de atendimento, com foco em organização de informações e navegação entre módulos como painel, alertas, banco de alimentos, banco de roupas, residências, cartões e administração.
 
-Currently, two official plugins are available:
+## Visão geral
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+O projeto foi criado para oferecer uma interface simples e objetiva para acompanhar demandas operacionais, organizar cadastros e facilitar o acesso rápido a funcionalidades essenciais em um ambiente de apoio social.
 
-## React Compiler
+## Funcionalidades
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- Painel inicial com visão geral das atividades
+- Gestão de alertas e mensagens
+- Cadastro e acompanhamento de itens em banco de alimentos e banco de roupas
+- Registro de informações relacionadas a residências, cartões e portas abertas
+- Navegação por rotas organizadas em páginas separadas
+- Interface responsiva com componentes reutilizáveis
 
-## Expanding the Oxlint configuration
+## Tecnologias
 
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
+- React 19
+- TypeScript
+- Vite
+- React Router DOM
+- Tailwind CSS
+- Lucide React
 
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+## Como executar localmente
+
+1. Instale as dependências:
+   ```bash
+   npm install
+   ```
+2. Inicie o servidor de desenvolvimento:
+   ```bash
+   npm run dev
+   ```
+3. Abra o endereço exibido no terminal, geralmente:
+   ```text
+   http://localhost:5173
+   ```
+
+## Build
+
+Para gerar a versão de produção:
+
+```bash
+npm run build
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+Os arquivos prontos para publicação serão gerados na pasta dist.
+
+## Publicação no GitHub Pages
+
+Este projeto já está configurado para publicação automática no GitHub Pages através de um workflow do GitHub Actions. Após o push para a branch main, a aplicação ficará disponível em:
+
+```text
+https://tioya2923.github.io/sgs-app/
+```
+
+## Licença
+
+Este projeto está licenciado sob a licença MIT. Consulte o arquivo LICENSE para mais detalhes.
+
+## Contribuição
+
+Contribuições são bem-vindas. Para isso, faça um fork do repositório, crie uma branch com suas alterações e abra um pull request.
