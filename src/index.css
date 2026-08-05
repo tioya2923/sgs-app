@@ -1,0 +1,83 @@
+@import "tailwindcss";
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Source+Sans+3:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
+
+@theme {
+  /* Núcleo do sistema — os armazéns, a Baixa de Lisboa, o papel de um dossiê */
+  --color-paper: #f6f2e9;
+  --color-paper-raised: #fbf8f1;
+  --color-ink: #211f1a;
+  --color-ink-soft: #5a5548;
+
+  --color-pine-950: #14231c;
+  --color-pine-900: #1b3025;
+  --color-pine-800: #234032;
+  --color-pine-700: #2e5641;
+  --color-pine-600: #3c6d53;
+  --color-pine-500: #4f8468;
+  --color-pine-200: #cfe0d2;
+  --color-pine-100: #e3ecdf;
+  --color-pine-50: #f0f5ec;
+
+  --color-terracotta-700: #9a4a24;
+  --color-terracotta-600: #b8592b;
+  --color-terracotta-500: #c97540;
+  --color-terracotta-100: #f3e1cf;
+  --color-terracotta-50: #faf1e6;
+
+  --color-brick-700: #7c2c26;
+  --color-brick-600: #9c3a30;
+  --color-brick-500: #b54b3f;
+  --color-brick-100: #f2ddd7;
+  --color-brick-50: #f9ece9;
+
+  --color-gold-500: #c79a3d;
+  --color-gold-100: #f2e6c8;
+
+  --font-display: "Fraunces", "Iowan Old Style", ui-serif, serif;
+  --font-sans: "Source Sans 3", "Segoe UI", ui-sans-serif, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
+html {
+  color-scheme: light;
+}
+
+body {
+  margin: 0;
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+#root {
+  min-height: 100svh;
+}
+
+::selection {
+  background: var(--color-gold-100);
+  color: var(--color-pine-900);
+}
+
+/* textura fina de papel, subtil, atrás de tudo */
+.paper-grain {
+  background-image:
+    radial-gradient(circle at 1px 1px, rgba(33, 31, 26, 0.055) 1px, transparent 0);
+  background-size: 22px 22px;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-pine-200);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-pine-500);
+}
