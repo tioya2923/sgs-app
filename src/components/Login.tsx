@@ -3,10 +3,17 @@ import { useDb } from "../store/db";
 import { Button, Field, Input } from "./ui";
 
 export function Login() {
-  const { login } = useDb();
+  const { login, resetDb } = useDb();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [erro, setErro] = useState(false);
+
+  function resetLocalState() {
+    resetDb();
+    setEmail("");
+    setPassword("");
+    setErro(false);
+  }
 
   function submeter(e: FormEvent) {
     e.preventDefault();
@@ -57,9 +64,18 @@ export function Login() {
             </p>
           )}
 
-          <Button type="submit" variant="primary" className="w-full justify-center">
-            Entrar
-          </Button>
+          <div className="space-y-3">
+            <Button type="submit" variant="primary" className="w-full justify-center">
+              Entrar
+            </Button>
+            <button
+              type="button"
+              className="w-full text-sm font-medium text-ink-soft underline underline-offset-4 transition hover:text-ink"
+              onClick={resetLocalState}
+            >
+              Reiniciar dados locais
+            </button>
+          </div>
         </form>
 
         <p className="mt-6 text-center text-xs text-ink-soft">

@@ -10,12 +10,27 @@ import {
 import type { Database, Perfil, Utilizador } from "../types";
 import { buildSeed } from "../data/seed";
 
-const STORAGE_KEY = "sgs-sao-nicolau:db:v1";
-const SESSION_KEY = "sgs-sao-nicolau:sessao";
+const STORAGE_VERSION = 2;
+const STORAGE_KEY = `sgs-sao-nicolau:db:v${STORAGE_VERSION}`;
+const LEGACY_STORAGE_KEY = "sgs-sao-nicolau:db:v1";
+const SESSION_KEY = `sgs-sao-nicolau:sessao:v${STORAGE_VERSION}`;
+const LEGACY_SESSION_KEY = "sgs-sao-nicolau:sessao";
 
 function loadDb(): Database {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
+    const legacyRaw = raw ?? localStorage.getItem(LEGACY_STORAGE_KEY);
+
+    if (legacyRaw && !raw) {
+      // O estado legado vinha de uma versão antiga da app.
+      // Forçar reset do seed garante que as alterações de utilizador e credenciais são aplicadas.
+      localStorage.removeItem(LEGACY_STORAGE_KEY);
+      localStorage.removeItem(LEGACY_SESSION_KEY);
+      const seeded = buildSeed();
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(seeded));
+      return seeded;
+    }
+
     if (raw) {
       const parsed = JSON.parse(raw) as Database;
       // Migração: instalações anteriores a este ecrã de login não tinham palavra-passe.
@@ -102,7 +117,10 @@ export function DbProvider({ children }: { children: ReactNode }) {
 
   const resetDb = useCallback(() => {
     const seeded = buildSeed();
+    setSession(null);
     setDb(seeded);
+    localStorage.removeItem(LEGACY_STORAGE_KEY);
+    localStorage.removeItem(LEGACY_SESSION_KEY);
   }, []);
 
   const login = useCallback<DbContextValue["login"]>(
