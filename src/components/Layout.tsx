@@ -3,7 +3,7 @@ import { ChevronRight } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useDb } from "../store/db";
 import { NAV, podeAceder } from "../lib/nav";
-import { computeAlertas } from "../lib/alerts";
+import { alertaVisivel, computeAlertas } from "../lib/alerts";
 
 function grupoDaRota(pathname: string): string | null {
   const grupo = NAV.find((g) => g.label && g.modules.some((m) => m.path === pathname));
@@ -22,8 +22,8 @@ export function Layout() {
   }, [location.pathname]);
 
   const alertasAtivos = useMemo(
-    () => computeAlertas(db).filter((a) => a.estado === "Ativo"),
-    [db]
+    () => computeAlertas(db).filter((a) => a.estado === "Ativo" && alertaVisivel(a, currentUser.perfil)),
+    [db, currentUser.perfil]
   );
   const urgentes = alertasAtivos.filter((a) => a.gravidade === "Urgente").length;
 

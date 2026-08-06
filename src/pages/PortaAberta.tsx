@@ -10,6 +10,7 @@ import {
   Modal,
   SectionHeading,
   Select,
+  SuggestInput,
   Textarea,
   estadoTone,
 } from "../components/ui";
@@ -26,6 +27,7 @@ import type {
   Pessoa,
   Processo,
   SituacaoHabitacional,
+  TipoContacto,
 } from "../types";
 
 type Tab = "agregados" | "processos";
@@ -96,6 +98,30 @@ function eliminarProcessoComCascata(
   removeRecord("processos", processo.id);
 }
 
+/**
+ * Remove uma pessoa isolada do agregado (ex.: saiu de casa, faleceu).
+ * Cascata igual à do processo — cabazes, cartões e refeições já registados
+ * mantêm-se como histórico, ligados a um processoId agora órfão.
+ */
+function eliminarPessoaComCascata(
+  db: ReturnType<typeof useDb>["db"],
+  pessoa: Pessoa,
+  removeRecord: ReturnType<typeof useDb>["removeRecord"],
+  updateRecord: ReturnType<typeof useDb>["updateRecord"]
+) {
+  const processoDaPessoa = db.processos.find((p) => p.pessoaId === pessoa.id);
+  if (processoDaPessoa) eliminarProcessoComCascata(db, processoDaPessoa, removeRecord, updateRecord);
+  db.contactos.filter((c) => c.pessoaId === pessoa.id).forEach((c) => removeRecord("contactos", c.id));
+  removeRecord("pessoas", pessoa.id);
+  const agregado = db.agregados.find((a) => a.id === pessoa.agregadoId);
+  if (agregado) {
+    updateRecord("agregados", agregado.id, {
+      numPessoas: Math.max(0, agregado.numPessoas - 1),
+      numMenores: Math.max(0, agregado.numMenores - (idade(pessoa.dataNascimento) < 18 ? 1 : 0)),
+    });
+  }
+}
+
 /** Remove um agregado e todas as pessoas e processos que só a ele pertencem. */
 function eliminarAgregadoComCascata(
   db: ReturnType<typeof useDb>["db"],
@@ -129,6 +155,10 @@ export function PortaAberta() {
 
   const vozLimitada = hasPerfil("Voluntário — distribuição");
   const podeEditar = hasPerfil("Direção", "Técnico de ação social");
+  // Voluntariado de distribuição só vê nomes e composição do agregado — nunca
+  // o processo de acompanhamento (NIF, contactos, atendimentos são dados de
+  // ação social, fora do que este perfil pode consultar).
+  const tabEfetivo: Tab = vozLimitada ? "agregados" : tab;
 
   const tecnicosDisponiveis = useMemo(
     () => db.utilizadores.filter((u) => u.perfil === "Técnico de ação social" && u.ativo),
@@ -162,12 +192,12 @@ export function PortaAberta() {
 
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div className="flex gap-1 rounded-lg border border-pine-900/15 bg-paper-raised p-1">
-          {(["agregados", "processos"] as Tab[]).map((t) => (
+          {(vozLimitada ? (["agregados"] as Tab[]) : (["agregados", "processos"] as Tab[])).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
               className={`rounded-md px-3.5 py-1.5 text-sm font-medium transition ${
-                tab === t ? "bg-pine-800 text-pine-50" : "text-ink-soft hover:text-ink"
+                tabEfetivo === t ? "bg-pine-800 text-pine-50" : "text-ink-soft hover:text-ink"
               }`}
             >
               {t === "agregados" ? "Agregados" : "Processos"}
@@ -176,12 +206,12 @@ export function PortaAberta() {
         </div>
         <div className="flex items-center gap-2">
           <Input
-            placeholder={tab === "agregados" ? "Procurar por código ou morada…" : "Procurar por nome…"}
+            placeholder={tabEfetivo === "agregados" ? "Procurar por código ou morada…" : "Procurar por nome…"}
             value={busca}
             onChange={(e) => setBusca(e.target.value)}
             className="max-w-xs"
           />
-          {tab === "agregados" && podeEditar && (
+          {tabEfetivo === "agregados" && podeEditar && (
             <Button variant="primary" onClick={() => setNovoAgregadoAberto(true)}>
               + Novo agregado
             </Button>
@@ -189,7 +219,7 @@ export function PortaAberta() {
         </div>
       </div>
 
-      {tab === "agregados" ? (
+      {tabEfetivo === "agregados" ? (
         <Card padded={false}>
           <div className="p-5">
             <DataTable
@@ -410,7 +440,12 @@ export function PortaAberta() {
           tecnicos={tecnicosDisponiveis}
           tecnicoAtual={currentUser.nome}
           processoDaPessoa={db.processos.find((p) => p.pessoaId === pessoaAberta.id) ?? null}
+          numPessoasNoAgregado={db.pessoas.filter((p) => p.agregadoId === pessoaAberta.agregadoId).length}
           onClose={() => setPessoaAbertaId(null)}
+          onRemover={() => {
+            eliminarPessoaComCascata(db, pessoaAberta, removeRecord, updateRecord);
+            setPessoaAbertaId(null);
+          }}
           onAtualizar={(patch) => {
             const antesMenor = idade(pessoaAberta.dataNascimento) < 18;
             updateRecord("pessoas", pessoaAberta.id, patch);
@@ -485,7 +520,7 @@ export function PortaAberta() {
         </Modal>
       )}
 
-      {processoAberto && (
+      {processoAberto && !vozLimitada && (
         <ProcessoModal
           processo={processoAberto}
           onClose={() => setProcessoAbertoId(null)}
@@ -643,12 +678,7 @@ function NovoAgregadoForm({
             </Field>
           </div>
           <Field label="Freguesia">
-            <Input value={freguesia} onChange={(e) => setFreguesia(e.target.value)} list="freguesias-sugestoes" />
-            <datalist id="freguesias-sugestoes">
-              {FREGUESIAS.map((f) => (
-                <option key={f} value={f} />
-              ))}
-            </datalist>
+            <SuggestInput value={freguesia} onChange={setFreguesia} suggestions={FREGUESIAS} />
           </Field>
           <Field label="Situação habitacional">
             <Select value={situacao} onChange={(e) => setSituacao(e.target.value as SituacaoHabitacional)}>
@@ -759,12 +789,7 @@ function EditarAgregadoForm({
           </Field>
         </div>
         <Field label="Freguesia">
-          <Input value={freguesia} onChange={(e) => setFreguesia(e.target.value)} list="freguesias-sugestoes-editar" />
-          <datalist id="freguesias-sugestoes-editar">
-            {FREGUESIAS.map((f) => (
-              <option key={f} value={f} />
-            ))}
-          </datalist>
+          <SuggestInput value={freguesia} onChange={setFreguesia} suggestions={FREGUESIAS} />
         </Field>
         <Field label="Situação habitacional">
           <Select value={situacao} onChange={(e) => setSituacao(e.target.value as SituacaoHabitacional)}>
@@ -1208,34 +1233,84 @@ function PessoaModal({
   tecnicos,
   tecnicoAtual,
   processoDaPessoa,
+  numPessoasNoAgregado,
   onClose,
   onAtualizar,
   onAbrirProcesso,
   onVerProcesso,
+  onRemover,
 }: {
   pessoa: Pessoa;
   podeEditar: boolean;
   tecnicos: ReturnType<typeof useDb>["db"]["utilizadores"];
   tecnicoAtual: string;
   processoDaPessoa: Processo | null;
+  numPessoasNoAgregado: number;
   onClose: () => void;
   onAtualizar: (patch: Partial<Pessoa>) => void;
   onAbrirProcesso: (dados: { tecnicaReferencia: string; periodicidade: Periodicidade }) => void;
   onVerProcesso: (processoId: string) => void;
+  onRemover: () => void;
 }) {
+  const { db, addRecord, removeRecord } = useDb();
+  const contactos = db.contactos.filter((c) => c.pessoaId === pessoa.id);
+
   const [editarAberto, setEditarAberto] = useState(false);
   const [abrirProcessoAberto, setAbrirProcessoAberto] = useState(false);
+  const [confirmarRemover, setConfirmarRemover] = useState(false);
+  const [adicionarContactoAberto, setAdicionarContactoAberto] = useState(false);
   const [tecnicaReferencia, setTecnicaReferencia] = useState(
     () => tecnicos.find((t) => t.nome === tecnicoAtual)?.nome ?? tecnicos[0]?.nome ?? tecnicoAtual
   );
   const [periodicidade, setPeriodicidade] = useState<Periodicidade>("Trimestral");
 
+  const podeRemover = numPessoasNoAgregado > 1;
+
+  if (confirmarRemover) {
+    return (
+      <Modal open onClose={() => setConfirmarRemover(false)} title="Remover pessoa">
+        <div className="space-y-4">
+          <p className="text-sm text-ink-soft">
+            Tem a certeza de que quer remover <strong className="text-ink">{pessoa.nome}</strong> do
+            agregado?
+            {processoDaPessoa &&
+              " O processo de acompanhamento próprio desta pessoa, com os respetivos atendimentos, documentos e inscrições, é removido."}{" "}
+            Os contactos registados para esta pessoa também são removidos. Cabazes, cartões e refeições já
+            registados mantêm-se, como histórico. A ação não pode ser desfeita.
+          </p>
+          {pessoa.parentesco === "Titular" && (
+            <p className="text-sm font-medium text-brick-600">
+              Esta é a pessoa titular do agregado. Depois de a remover, poderá editar outra pessoa do
+              agregado para lhe atribuir o parentesco "Titular".
+            </p>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setConfirmarRemover(false)}>
+              Cancelar
+            </Button>
+            <Button variant="danger" onClick={onRemover}>
+              Remover pessoa
+            </Button>
+          </div>
+        </div>
+      </Modal>
+    );
+  }
+
   return (
     <Modal open onClose={onClose} title={pessoa.nome} width="max-w-xl">
       {podeEditar && (
-        <div className="mb-4 flex justify-end">
+        <div className="mb-4 flex justify-end gap-2">
           <Button variant="secondary" onClick={() => setEditarAberto((v) => !v)}>
             {editarAberto ? "Cancelar edição" : "Editar pessoa"}
+          </Button>
+          <Button
+            variant="danger"
+            disabled={!podeRemover}
+            title={podeRemover ? undefined : "Para remover a última pessoa do agregado, elimine o agregado."}
+            onClick={() => setConfirmarRemover(true)}
+          >
+            Remover pessoa
           </Button>
         </div>
       )}
@@ -1289,6 +1364,44 @@ function PessoaModal({
           </div>
         </dl>
       )}
+
+      <div className="mb-5 border-t border-pine-900/10 pt-4">
+        <div className="mb-2 flex items-center justify-between">
+          <h4 className="font-display text-base font-medium">Contactos</h4>
+          {podeEditar && (
+            <Button variant="secondary" onClick={() => setAdicionarContactoAberto((v) => !v)}>
+              {adicionarContactoAberto ? "Cancelar" : "+ Adicionar contacto"}
+            </Button>
+          )}
+        </div>
+
+        {adicionarContactoAberto && (
+          <AdicionarContactoForm
+            onAdicionar={(dados) => {
+              addRecord("contactos", { id: newId("con"), pessoaId: pessoa.id, ...dados });
+              setAdicionarContactoAberto(false);
+            }}
+          />
+        )}
+
+        <ul className="space-y-1.5 text-sm">
+          {contactos.length === 0 && <li className="text-ink-soft">Sem contactos registados.</li>}
+          {contactos.map((c) => (
+            <li key={c.id} className="flex items-center justify-between gap-2">
+              <span className="flex flex-wrap items-center gap-2">
+                <span className="text-ink-soft">{c.tipo}:</span> {c.valor}
+                {c.preferencial && <Badge tone="pine">Preferencial</Badge>}
+                {!c.consentimento && <Badge tone="brick">Sem consentimento</Badge>}
+              </span>
+              {podeEditar && (
+                <Button variant="ghost" onClick={() => removeRecord("contactos", c.id)}>
+                  Remover
+                </Button>
+              )}
+            </li>
+          ))}
+        </ul>
+      </div>
 
       <div className="border-t border-pine-900/10 pt-4">
         <h4 className="mb-2 font-display text-base font-medium">Processo de acompanhamento</h4>
@@ -1345,6 +1458,59 @@ function PessoaModal({
         )}
       </div>
     </Modal>
+  );
+}
+
+function AdicionarContactoForm({
+  onAdicionar,
+}: {
+  onAdicionar: (dados: Omit<Contacto, "id" | "pessoaId">) => void;
+}) {
+  const [tipo, setTipo] = useState<TipoContacto>("Telemóvel");
+  const [valor, setValor] = useState("");
+  const [preferencial, setPreferencial] = useState(false);
+  const [consentimento, setConsentimento] = useState(true);
+
+  const podeAdicionar = valor.trim();
+
+  return (
+    <div className="mb-3 space-y-3 rounded-xl border border-pine-900/10 bg-pine-50/60 p-3">
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Tipo">
+          <Select value={tipo} onChange={(e) => setTipo(e.target.value as TipoContacto)}>
+            <option>Telemóvel</option>
+            <option>Telefone fixo</option>
+            <option>Email</option>
+          </Select>
+        </Field>
+        <Field label="Valor">
+          <Input value={valor} onChange={(e) => setValor(e.target.value)} autoFocus />
+        </Field>
+      </div>
+      <label className="flex items-center gap-2 text-sm font-medium text-ink">
+        <input type="checkbox" checked={preferencial} onChange={(e) => setPreferencial(e.target.checked)} />
+        Contacto preferencial
+      </label>
+      <label className="flex items-center gap-2 text-sm font-medium text-ink">
+        <input type="checkbox" checked={consentimento} onChange={(e) => setConsentimento(e.target.checked)} />
+        Tem consentimento para ser contactado(a) por este meio
+      </label>
+      <Button
+        variant="primary"
+        disabled={!podeAdicionar}
+        onClick={() =>
+          onAdicionar({
+            tipo,
+            valor: valor.trim(),
+            preferencial,
+            consentimento,
+            dataConsentimento: consentimento ? new Date().toISOString().slice(0, 10) : null,
+          })
+        }
+      >
+        Adicionar contacto
+      </Button>
+    </div>
   );
 }
 

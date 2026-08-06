@@ -43,14 +43,23 @@ export function Administracao() {
   const { db, currentUser, addRecord, updateRecord, removeRecord } = useDb();
   const [aberto, setAberto] = useState(false);
   const [aRemover, setARemover] = useState<Utilizador | null>(null);
+  const [aEditar, setAEditar] = useState<Utilizador | null>(null);
 
   const direcoesAtivas = db.utilizadores.filter((u) => u.perfil === "Direção" && u.ativo).length;
+  // Esta é a única Direção ativa: qualquer perda de acesso desta conta (remoção,
+  // desativação ou mudança de perfil) deixaria a Administração sem ninguém que a
+  // pudesse repor. As três ações abaixo partilham por isso a mesma verificação.
+  const ehUnicaDirecaoAtiva = (u: Utilizador) => u.perfil === "Direção" && u.ativo && direcoesAtivas <= 1;
 
   function podeRemover(u: Utilizador): true | string {
     if (u.id === currentUser.id) return "Não pode remover-se a si próprio.";
-    if (u.perfil === "Direção" && u.ativo && direcoesAtivas <= 1) {
-      return "Tem de haver sempre pelo menos uma Direção ativa.";
-    }
+    if (ehUnicaDirecaoAtiva(u)) return "Tem de haver sempre pelo menos uma Direção ativa.";
+    return true;
+  }
+
+  function podeDesativar(u: Utilizador): true | string {
+    if (u.id === currentUser.id) return "Não pode desativar-se a si próprio.";
+    if (ehUnicaDirecaoAtiva(u)) return "Tem de haver sempre pelo menos uma Direção ativa.";
     return true;
   }
 
@@ -76,11 +85,20 @@ export function Administracao() {
             { header: "Último acesso", cell: (u) => formatDate(u.ultimoAcesso) },
             {
               header: "Estado",
-              cell: (u) => (
-                <button onClick={() => updateRecord("utilizadores", u.id, { ativo: !u.ativo })}>
-                  <Badge tone={u.ativo ? "pine" : "brick"}>{u.ativo ? "Ativo" : "Inativo"}</Badge>
-                </button>
-              ),
+              cell: (u) => {
+                // Só a passagem para "Inativo" precisa de verificação — reativar nunca é perigoso.
+                const motivo = u.ativo ? podeDesativar(u) : true;
+                return (
+                  <button
+                    disabled={motivo !== true}
+                    title={motivo === true ? undefined : motivo}
+                    onClick={() => updateRecord("utilizadores", u.id, { ativo: !u.ativo })}
+                    className="disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Badge tone={u.ativo ? "pine" : "brick"}>{u.ativo ? "Ativo" : "Inativo"}</Badge>
+                  </button>
+                );
+              },
             },
             {
               header: "",
@@ -88,21 +106,39 @@ export function Administracao() {
               cell: (u) => {
                 const motivo = podeRemover(u);
                 return (
-                  <Button
-                    variant="ghost"
-                    disabled={motivo !== true}
-                    title={motivo === true ? undefined : motivo}
-                    onClick={() => setARemover(u)}
-                    className="text-brick-600 hover:bg-brick-50 disabled:text-ink-soft"
-                  >
-                    Remover
-                  </Button>
+                  <div className="flex justify-end gap-1">
+                    <Button variant="ghost" onClick={() => setAEditar(u)}>
+                      Editar
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      disabled={motivo !== true}
+                      title={motivo === true ? undefined : motivo}
+                      onClick={() => setARemover(u)}
+                      className="text-brick-600 hover:bg-brick-50 disabled:text-ink-soft"
+                    >
+                      Remover
+                    </Button>
+                  </div>
                 );
               },
             },
           ]}
         />
       </Card>
+
+      <Modal open={!!aEditar} onClose={() => setAEditar(null)} title="Editar utilizador">
+        {aEditar && (
+          <EditarUtilizadorForm
+            utilizador={aEditar}
+            bloquearRebaixamento={ehUnicaDirecaoAtiva(aEditar)}
+            onGuardar={(patch) => {
+              updateRecord("utilizadores", aEditar.id, patch);
+              setAEditar(null);
+            }}
+          />
+        )}
+      </Modal>
 
       <Modal open={!!aRemover} onClose={() => setARemover(null)} title="Remover utilizador">
         <div className="space-y-4">
@@ -183,6 +219,65 @@ export function Administracao() {
           }}
         />
       </Modal>
+    </div>
+  );
+}
+
+function EditarUtilizadorForm({
+  utilizador,
+  bloquearRebaixamento,
+  onGuardar,
+}: {
+  utilizador: Utilizador;
+  bloquearRebaixamento: boolean;
+  onGuardar: (patch: Partial<Utilizador>) => void;
+}) {
+  const [nome, setNome] = useState(utilizador.nome);
+  const [email, setEmail] = useState(utilizador.email);
+  const [perfil, setPerfil] = useState<Perfil>(utilizador.perfil);
+  const [novaPassword, setNovaPassword] = useState("");
+
+  const rebaixando = bloquearRebaixamento && perfil !== "Direção";
+  const podeGuardar = nome.trim() && email.trim() && !rebaixando;
+
+  return (
+    <div className="space-y-3">
+      <Field label="Nome">
+        <Input value={nome} onChange={(e) => setNome(e.target.value)} />
+      </Field>
+      <Field label="Email">
+        <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+      </Field>
+      <Field label="Perfil">
+        <Select value={perfil} onChange={(e) => setPerfil(e.target.value as Perfil)}>
+          {PERFIS.map((p) => (
+            <option key={p}>{p}</option>
+          ))}
+        </Select>
+      </Field>
+      {rebaixando && (
+        <p className="text-sm text-brick-600">
+          Esta é a única Direção ativa — mude primeiro outra pessoa para Direção antes de tirar este
+          perfil a {utilizador.nome}.
+        </p>
+      )}
+      <Field label="Nova palavra-passe" hint="Deixe em branco para manter a palavra-passe atual.">
+        <Input type="password" value={novaPassword} onChange={(e) => setNovaPassword(e.target.value)} />
+      </Field>
+      <Button
+        variant="primary"
+        disabled={!podeGuardar}
+        onClick={() =>
+          onGuardar({
+            nome: nome.trim(),
+            email: email.trim(),
+            perfil,
+            ...(novaPassword.trim() ? { password: novaPassword.trim() } : {}),
+          })
+        }
+      >
+        Guardar alterações
+      </Button>
     </div>
   );
 }

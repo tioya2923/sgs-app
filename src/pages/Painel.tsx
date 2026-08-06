@@ -1,7 +1,8 @@
 import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import { useDb } from "../store/db";
-import { computeAlertas } from "../lib/alerts";
+import { alertaVisivel, computeAlertas } from "../lib/alerts";
+import { moduloVisivel, podeAceder } from "../lib/nav";
 import { Badge, Card, DataTable, SectionHeading, StatTile, gravidadeTone } from "../components/ui";
 import { formatDate, formatDateLong } from "../lib/format";
 
@@ -16,10 +17,28 @@ function inicioMesISO() {
 
 export function Painel() {
   const { db, currentUser } = useDb();
+  const perfil = currentUser.perfil;
   const hoje = hojeISO();
   const inicioMes = inicioMesISO();
 
-  const alertas = useMemo(() => computeAlertas(db), [db]);
+  // O painel só mostra o que cada perfil já pode ver noutro lado — cada
+  // bloco espelha o acesso do módulo de onde os dados vêm (lib/nav.ts), e os
+  // casos individuais (nomes de pessoas) ficam reservados a quem vê
+  // "processos completos" (secção 6.1), tal como os alertas automáticos.
+  const veCasos = podeAceder(perfil, ["Direção", "Técnico de ação social"]);
+  const veBancoAlimentos = moduloVisivel("/banco-alimentos", perfil);
+  const veResidencia = moduloVisivel("/residencia", perfil);
+  const veCasaCaridade = moduloVisivel("/casa-caridade", perfil);
+  const veBancoRoupa = moduloVisivel("/banco-roupa", perfil);
+  const veExistencias = moduloVisivel("/existencias", perfil);
+  const veCartoes = moduloVisivel("/cartoes", perfil);
+  const veEntradasGeral = veBancoAlimentos || veResidencia || veCasaCaridade || veBancoRoupa;
+  const veEstatisticasMes = veBancoAlimentos || veCasaCaridade || veCasos;
+
+  const alertas = useMemo(
+    () => computeAlertas(db).filter((a) => alertaVisivel(a, perfil)),
+    [db, perfil]
+  );
   const alertasAtivos = alertas.filter((a) => a.estado === "Ativo");
 
   const atendimentosHoje = db.atendimentos.filter((a) => a.data === hoje);
@@ -28,6 +47,7 @@ export function Painel() {
   const entradasHoje = db.movimentos.filter((m) => m.tipo === "entrada" && m.data === hoje);
   const refeicoesHoje = db.refeicoesContagem.filter((r) => r.data === hoje);
   const totalRefeicoesHoje = refeicoesHoje.reduce((s, r) => s + r.numPessoas, 0);
+  const cartoesPorEntregar = db.cartoes.filter((c) => c.estado === "Por entregar").length;
 
   const cabazesMes = db.entregasCabaz.filter(
     (e) => e.dataPrevista >= inicioMes && e.estado === "Entregue"
@@ -47,16 +67,19 @@ export function Painel() {
       />
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        <StatTile label="Atendimentos hoje" value={atendimentosHoje.length} tone="pine" />
-        <StatTile
-          label="Cabazes hoje"
-          value={`${cabazesHoje.filter((c) => c.estado === "Entregue").length}/${cabazesHoje.length}`}
-          hint="entregues / previstos"
-          tone="terracotta"
-        />
-        <StatTile label="Refeições hoje" value={totalRefeicoesHoje} tone="gold" />
-        <StatTile label="Roupa hoje" value={roupaHoje.length} tone="neutral" />
-        <StatTile label="Entradas hoje" value={entradasHoje.length} tone="pine" />
+        {veCasos && <StatTile label="Atendimentos hoje" value={atendimentosHoje.length} tone="pine" />}
+        {veBancoAlimentos && (
+          <StatTile
+            label="Cabazes hoje"
+            value={`${cabazesHoje.filter((c) => c.estado === "Entregue").length}/${cabazesHoje.length}`}
+            hint="entregues / previstos"
+            tone="terracotta"
+          />
+        )}
+        {veCasaCaridade && <StatTile label="Refeições hoje" value={totalRefeicoesHoje} tone="gold" />}
+        {veBancoRoupa && <StatTile label="Roupa hoje" value={roupaHoje.length} tone="neutral" />}
+        {veEntradasGeral && <StatTile label="Entradas hoje" value={entradasHoje.length} tone="pine" />}
+        {veCartoes && <StatTile label="Cartões por entregar" value={cartoesPorEntregar} tone="terracotta" />}
         <StatTile
           label="Alertas ativos"
           value={alertasAtivos.length}
@@ -90,72 +113,88 @@ export function Painel() {
           />
         </Card>
 
-        <Card title="Estatísticas do mês" subtitle="Desde o dia 1">
-          <dl className="space-y-3 text-sm">
-            <div className="flex items-center justify-between">
-              <dt className="text-ink-soft">Cabazes entregues</dt>
-              <dd className="font-display text-lg text-ink">{cabazesMes}</dd>
-            </div>
-            <div className="flex items-center justify-between">
-              <dt className="text-ink-soft">Refeições servidas</dt>
-              <dd className="font-display text-lg text-ink">{refeicoesMes}</dd>
-            </div>
-            <div className="flex items-center justify-between">
-              <dt className="text-ink-soft">Processos ativos</dt>
-              <dd className="font-display text-lg text-ink">{pessoasComProcesso}</dd>
-            </div>
-            <div className="flex items-center justify-between border-t border-pine-900/10 pt-3">
-              <dt className="text-ink-soft">Pessoas apoiadas (total)</dt>
-              <dd className="font-display text-lg text-ink">{totalApoiados}</dd>
-            </div>
-            <div className="flex items-center justify-between">
-              <dt className="text-ink-soft">Agregados</dt>
-              <dd className="font-display text-lg text-ink">{db.agregados.length}</dd>
-            </div>
-          </dl>
-        </Card>
+        {veEstatisticasMes && (
+          <Card title="Estatísticas do mês" subtitle="Desde o dia 1">
+            <dl className="space-y-3 text-sm">
+              {veBancoAlimentos && (
+                <div className="flex items-center justify-between">
+                  <dt className="text-ink-soft">Cabazes entregues</dt>
+                  <dd className="font-display text-lg text-ink">{cabazesMes}</dd>
+                </div>
+              )}
+              {veCasaCaridade && (
+                <div className="flex items-center justify-between">
+                  <dt className="text-ink-soft">Refeições servidas</dt>
+                  <dd className="font-display text-lg text-ink">{refeicoesMes}</dd>
+                </div>
+              )}
+              {veCasos && (
+                <>
+                  <div className="flex items-center justify-between">
+                    <dt className="text-ink-soft">Processos ativos</dt>
+                    <dd className="font-display text-lg text-ink">{pessoasComProcesso}</dd>
+                  </div>
+                  <div className="flex items-center justify-between border-t border-pine-900/10 pt-3">
+                    <dt className="text-ink-soft">Pessoas apoiadas (total)</dt>
+                    <dd className="font-display text-lg text-ink">{totalApoiados}</dd>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <dt className="text-ink-soft">Agregados</dt>
+                    <dd className="font-display text-lg text-ink">{db.agregados.length}</dd>
+                  </div>
+                </>
+              )}
+            </dl>
+          </Card>
+        )}
       </div>
 
-      <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-2">
-        <Card title="Atendimentos de hoje" subtitle="Porta Aberta">
-          <DataTable
-            emptyLabel="Sem atendimentos registados hoje."
-            rowKey={(a) => a.id}
-            rows={atendimentosHoje}
-            columns={[
-              {
-                header: "Pessoa",
-                cell: (a) => {
-                  const proc = db.processos.find((p) => p.id === a.processoId);
-                  const pessoa = db.pessoas.find((p) => p.id === proc?.pessoaId);
-                  return pessoa?.nome ?? "—";
-                },
-              },
-              { header: "Tipo", cell: (a) => a.tipo },
-              { header: "Técnico", cell: (a) => <span className="text-ink-soft">{a.tecnico}</span> },
-            ]}
-          />
-        </Card>
+      {(veCasos || veExistencias) && (
+        <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-2">
+          {veCasos && (
+            <Card title="Atendimentos de hoje" subtitle="Porta Aberta">
+              <DataTable
+                emptyLabel="Sem atendimentos registados hoje."
+                rowKey={(a) => a.id}
+                rows={atendimentosHoje}
+                columns={[
+                  {
+                    header: "Pessoa",
+                    cell: (a) => {
+                      const proc = db.processos.find((p) => p.id === a.processoId);
+                      const pessoa = db.pessoas.find((p) => p.id === proc?.pessoaId);
+                      return pessoa?.nome ?? "—";
+                    },
+                  },
+                  { header: "Tipo", cell: (a) => a.tipo },
+                  { header: "Técnico", cell: (a) => <span className="text-ink-soft">{a.tecnico}</span> },
+                ]}
+              />
+            </Card>
+          )}
 
-        <Card title="Entradas de hoje" subtitle="Existências">
-          <DataTable
-            emptyLabel="Sem entradas registadas hoje."
-            rowKey={(m) => m.id}
-            rows={entradasHoje}
-            columns={[
-              {
-                header: "Artigo",
-                cell: (m) => db.artigos.find((a) => a.id === m.artigoId)?.nome ?? "—",
-              },
-              { header: "Quantidade", cell: (m) => m.quantidade, align: "right" },
-              {
-                header: "Origem",
-                cell: (m) => <span className="text-ink-soft">{m.fornecedor ?? m.benfeitor ?? "—"}</span>,
-              },
-            ]}
-          />
-        </Card>
-      </div>
+          {veExistencias && (
+            <Card title="Entradas de hoje" subtitle="Existências">
+              <DataTable
+                emptyLabel="Sem entradas registadas hoje."
+                rowKey={(m) => m.id}
+                rows={entradasHoje}
+                columns={[
+                  {
+                    header: "Artigo",
+                    cell: (m) => db.artigos.find((a) => a.id === m.artigoId)?.nome ?? "—",
+                  },
+                  { header: "Quantidade", cell: (m) => m.quantidade, align: "right" },
+                  {
+                    header: "Origem",
+                    cell: (m) => <span className="text-ink-soft">{m.fornecedor ?? m.benfeitor ?? "—"}</span>,
+                  },
+                ]}
+              />
+            </Card>
+          )}
+        </div>
+      )}
 
       <p className="mt-6 text-center text-xs text-ink-soft">
         Dados de demonstração · última atualização {formatDate(hoje)}

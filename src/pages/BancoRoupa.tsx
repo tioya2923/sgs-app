@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useDb } from "../store/db";
-import { Button, Card, DataTable, Field, Input, Modal, SectionHeading, Select } from "../components/ui";
+import { Button, Card, DataTable, Field, Input, Modal, SectionHeading, Select, SuggestInput } from "../components/ui";
 import { formatDate } from "../lib/format";
 import { newId } from "../lib/id";
+import { sugestoesBenfeitores } from "../lib/sugestoes";
 import type { Artigo, ItemRoupa, Lote, Movimento } from "../types";
 
 const NOVO_ARTIGO = "__novo__";
@@ -218,6 +219,8 @@ function Entradas({
     .filter((m) => artigos.some((a) => a.id === m.artigoId) && m.tipo === "entrada")
     .sort((a, b) => b.data.localeCompare(a.data));
 
+  const sugestoesDoador = useMemo(() => sugestoesBenfeitores(movimentos), [movimentos]);
+
   function submeter() {
     let idArtigoFinal = artigoId;
     if (ehNovoArtigo) {
@@ -331,8 +334,8 @@ function Entradas({
           <Field label="Quantidade">
             <Input type="number" min={1} value={quantidade} onChange={(e) => setQuantidade(Number(e.target.value))} />
           </Field>
-          <Field label="Doador (opcional)">
-            <Input value={benfeitor} onChange={(e) => setBenfeitor(e.target.value)} />
+          <Field label="Doador (opcional)" hint="Sugere nomes já usados, mas pode escrever um novo.">
+            <SuggestInput value={benfeitor} onChange={setBenfeitor} suggestions={sugestoesDoador} />
           </Field>
           <Button variant="primary" onClick={submeter} disabled={ehNovoArtigo && !novoNome.trim()}>
             Registar

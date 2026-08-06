@@ -12,11 +12,13 @@ import {
   Modal,
   SectionHeading,
   Select,
+  SuggestInput,
   estadoTone,
 } from "../components/ui";
 import { formatDate, diasAte } from "../lib/format";
 import { newId } from "../lib/id";
 import { UNIDADES } from "../lib/unidades";
+import { sugestoesBenfeitores } from "../lib/sugestoes";
 import type { Artigo, EntregaCabaz, LinhaModeloCabaz, Lote, Movimento } from "../types";
 
 type Tab = "montar" | "historico" | "modelos" | "entradas";
@@ -28,6 +30,10 @@ export function BancoAlimentos() {
   const [tab, setTab] = useState<Tab>("montar");
   const podeGerirModelos = hasPerfil("Direção", "Técnico de ação social");
   const podeRegistarEntrada = hasPerfil("Direção", "Armazém");
+  // Voluntário — distribuição só "regista a entrega" (secção 6.1) — segue o
+  // modelo sugerido e as sugestões de validade curta, mas não compõe
+  // livremente o cabaz com qualquer artigo do armazém.
+  const podeComporLivremente = hasPerfil("Direção", "Técnico de ação social", "Armazém");
 
   const armazem = db.armazens.find((a) => a.codigo === ARMAZEM_CODIGO)!;
   const artigosArmazem = db.artigos.filter((a) => a.armazemId === armazem.id);
@@ -61,6 +67,7 @@ export function BancoAlimentos() {
         <MontarCabaz
           artigosArmazem={artigosArmazem}
           registadoPor={currentUser.nome}
+          podeComporLivremente={podeComporLivremente}
           onEntregar={(entrega, consumos) => {
             addRecord("entregasCabaz", entrega);
             consumos.forEach(({ lote, movimento }) => {
@@ -105,10 +112,12 @@ function escolherModeloPorTamanho(numPessoas: number, modelos: ReturnType<typeof
 function MontarCabaz({
   artigosArmazem,
   registadoPor,
+  podeComporLivremente,
   onEntregar,
 }: {
   artigosArmazem: ReturnType<typeof useDb>["db"]["artigos"];
   registadoPor: string;
+  podeComporLivremente: boolean;
   onEntregar: (entrega: EntregaCabaz, consumos: { lote: Lote; movimento: Movimento }[]) => void;
 }) {
   const { db } = useDb();
@@ -116,6 +125,7 @@ function MontarCabaz({
   const [linhas, setLinhas] = useState<LinhaModeloCabaz[]>([]);
   const [modeloId, setModeloId] = useState("");
   const [confirmado, setConfirmado] = useState<string | null>(null);
+  const [novoArtigoId, setNovoArtigoId] = useState("");
 
   const agregado = db.agregados.find((a) => a.id === agregadoId) ?? null;
   const processo = agregado
@@ -296,6 +306,10 @@ function MontarCabaz({
                       min={0}
                       value={l.quantidade}
                       onChange={(e) => atualizarQuantidade(l.artigoId, Number(e.target.value))}
+                      onFocus={(e) => {
+                        const el = e.target;
+                        window.setTimeout(() => el.select(), 0);
+                      }}
                       className="w-16 shrink-0 rounded-md border border-pine-900/15 bg-paper px-2 py-1 text-right text-sm"
                     />
                     <button
@@ -463,6 +477,7 @@ function Entradas({
   const [quantidade, setQuantidade] = useState(1);
   const [validade, setValidade] = useState("");
   const [fornecedor, setFornecedor] = useState("");
+  const [documento, setDocumento] = useState("");
   const [novoNome, setNovoNome] = useState("");
   const [novaCategoria, setNovaCategoria] = useState("Mercearia");
   const [novaUnidade, setNovaUnidade] = useState("un");
@@ -471,6 +486,8 @@ function Entradas({
   const movimentosArmazem = db.movimentos
     .filter((m) => artigosArmazem.some((a) => a.id === m.artigoId) && m.tipo === "entrada")
     .sort((a, b) => b.data.localeCompare(a.data));
+
+  const sugestoesFornecedor = useMemo(() => sugestoesBenfeitores(movimentosArmazem), [movimentosArmazem]);
 
   const ehNovoArtigo = artigoId === NOVO_ARTIGO;
 
@@ -513,7 +530,7 @@ function Entradas({
         origemOuDestino: armazemDesignacao,
         fornecedor: fornecedor || null,
         benfeitor: null,
-        documento: null,
+        documento: documento || null,
         preco: null,
         registadoPor,
         referencia: null,
@@ -525,6 +542,7 @@ function Entradas({
     setQuantidade(1);
     setValidade("");
     setFornecedor("");
+    setDocumento("");
     setNovoNome("");
   }
 
@@ -601,8 +619,11 @@ function Entradas({
           <Field label="Validade (opcional)">
             <Input type="date" value={validade} onChange={(e) => setValidade(e.target.value)} />
           </Field>
-          <Field label="Fornecedor / benfeitor">
-            <Input value={fornecedor} onChange={(e) => setFornecedor(e.target.value)} />
+          <Field label="Fornecedor / benfeitor" hint="Sugere nomes já usados, mas pode escrever um novo.">
+            <SuggestInput value={fornecedor} onChange={setFornecedor} suggestions={sugestoesFornecedor} />
+          </Field>
+          <Field label="Documento (opcional)" hint="Nº da guia de remessa ou recibo.">
+            <Input value={documento} onChange={(e) => setDocumento(e.target.value)} placeholder="ex.: GR-1013" />
           </Field>
           <Button variant="primary" onClick={submeter} disabled={ehNovoArtigo && !novoNome.trim()}>
             Registar

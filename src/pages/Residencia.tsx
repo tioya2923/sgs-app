@@ -30,6 +30,8 @@ export function Residencia() {
   const movimentos = db.movimentos
     .filter((m) => artigos.some((a) => a.id === m.artigoId))
     .sort((a, b) => b.data.localeCompare(a.data));
+  const entradas = movimentos.filter((m) => m.tipo === "entrada");
+  const saidas = movimentos.filter((m) => m.tipo === "saída");
 
   function registarEntrada() {
     let idArtigoFinal = artigoId;
@@ -129,16 +131,31 @@ export function Residencia() {
         }
       />
 
-      <Card title="Movimentos" subtitle={armazem.designacao}>
+      <Card title="Entradas" subtitle={armazem.designacao}>
         <DataTable
           rowKey={(m) => m.id}
-          rows={movimentos}
+          rows={entradas}
+          emptyLabel="Sem entradas registadas."
           columns={[
             { header: "Data", cell: (m) => formatDate(m.data) },
-            { header: "Tipo", cell: (m) => m.tipo },
             { header: "Artigo", cell: (m) => db.artigos.find((a) => a.id === m.artigoId)?.nome ?? "—" },
             { header: "Quantidade", cell: (m) => m.quantidade, align: "right" },
-            { header: "Destino / origem", cell: (m) => <span className="text-ink-soft">{m.origemOuDestino}</span> },
+            { header: "Fornecedor", cell: (m) => <span className="text-ink-soft">{m.fornecedor ?? "—"}</span> },
+            { header: "Registado por", cell: (m) => m.registadoPor },
+          ]}
+        />
+      </Card>
+
+      <Card title="Saídas" subtitle="Para a cozinha da Casa da Caridade" className="mt-5">
+        <DataTable
+          rowKey={(m) => m.id}
+          rows={saidas}
+          emptyLabel="Sem saídas registadas."
+          columns={[
+            { header: "Data", cell: (m) => formatDate(m.data) },
+            { header: "Artigo", cell: (m) => db.artigos.find((a) => a.id === m.artigoId)?.nome ?? "—" },
+            { header: "Quantidade", cell: (m) => m.quantidade, align: "right" },
+            { header: "Destino", cell: (m) => <span className="text-ink-soft">{m.origemOuDestino}</span> },
             { header: "Registado por", cell: (m) => m.registadoPor },
           ]}
         />

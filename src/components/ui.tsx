@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
 
 // --- Estrutura básica ------------------------------------------------------
@@ -177,6 +177,13 @@ export function estadoTone(estado: string): Tone {
   return "gold";
 }
 
+export function tipoMovimentoTone(tipo: string): Tone {
+  if (tipo === "entrada") return "pine";
+  if (tipo === "saída") return "terracotta";
+  if (tipo === "quebra") return "brick";
+  return "gold"; // transferência
+}
+
 // --- Formulário ----------------------------------------------------------
 
 export function Field({
@@ -200,8 +207,26 @@ export function Field({
 const controlClass =
   "w-full rounded-lg border border-pine-900/15 bg-paper px-3 py-2 text-sm text-ink outline-none transition focus:border-pine-600 focus:ring-2 focus:ring-pine-600/15";
 
-export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
-  return <input {...props} className={`${controlClass} ${props.className ?? ""}`} />;
+export function Input({ onFocus, ...props }: InputHTMLAttributes<HTMLInputElement>) {
+  return (
+    <input
+      {...props}
+      onFocus={(e) => {
+        // Nos campos numéricos (quantidade, valores, mínimos de stock…) o
+        // valor pré-preenchido fica selecionado ao focar, para escrever um
+        // número novo substituir logo o antigo em vez de se lhe juntar. Um
+        // clique de rato reposiciona o cursor logo a seguir ao focus (o
+        // próprio comportamento nativo do input), desfazendo a seleção — por
+        // isso a seleção é adiada para depois desse reposicionamento.
+        if (props.type === "number") {
+          const el = e.target;
+          window.setTimeout(() => el.select(), 0);
+        }
+        onFocus?.(e);
+      }}
+      className={`${controlClass} ${props.className ?? ""}`}
+    />
+  );
 }
 
 export function Select(props: SelectHTMLAttributes<HTMLSelectElement>) {
@@ -210,6 +235,71 @@ export function Select(props: SelectHTMLAttributes<HTMLSelectElement>) {
 
 export function Textarea(props: TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return <textarea {...props} className={`${controlClass} ${props.className ?? ""}`} />;
+}
+
+// --- Campo de texto com sugestões -----------------------------------------
+// Substitui <input list> + <datalist>: o dropdown nativo do browser pode
+// aparecer desalinhado do campo (bug conhecido, mais visível dentro de
+// modais). Aqui o dropdown é desenhado pela aplicação, sempre ancorado ao
+// campo, e continua a aceitar qualquer texto novo — não é uma lista fechada.
+export function SuggestInput({
+  value,
+  onChange,
+  suggestions,
+  className = "",
+  onFocus,
+  onBlur,
+  ...props
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  suggestions: string[];
+} & Omit<InputHTMLAttributes<HTMLInputElement>, "value" | "onChange">) {
+  const [aberto, setAberto] = useState(false);
+
+  const filtradas = suggestions
+    .filter((s) => s.toLowerCase().includes(value.trim().toLowerCase()))
+    .slice(0, 8);
+
+  return (
+    <div className="relative">
+      <input
+        {...props}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onFocus={(e) => {
+          setAberto(true);
+          onFocus?.(e);
+        }}
+        onBlur={(e) => {
+          // adia o fecho para o clique numa sugestão ainda registar
+          window.setTimeout(() => setAberto(false), 150);
+          onBlur?.(e);
+        }}
+        autoComplete="off"
+        className={`${controlClass} ${className}`}
+      />
+      {aberto && filtradas.length > 0 && (
+        <ul className="absolute z-20 mt-1 max-h-48 w-full overflow-y-auto rounded-lg border border-pine-900/15 bg-paper-raised py-1 shadow-lg">
+          {filtradas.map((s) => (
+            <li key={s}>
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  onChange(s);
+                  setAberto(false);
+                }}
+                className="block w-full truncate px-3 py-1.5 text-left text-sm text-ink hover:bg-pine-50"
+              >
+                {s}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
 }
 
 // --- Botões --------------------------------------------------------------

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useDb } from "../store/db";
 import {
   Badge,
@@ -10,15 +10,27 @@ import {
   Modal,
   SectionHeading,
   Select,
+  SuggestInput,
   estadoTone,
 } from "../components/ui";
 import { diasAte, formatCurrency, formatDate } from "../lib/format";
 import { newId } from "../lib/id";
+import type { Cartao } from "../types";
+
+const ORIGENS_FUNDO_BASE = ["Câmara Municipal de Lisboa", "Fundo paroquial", "Doação privada"];
+
+function estadoEfetivo(c: Cartao): string {
+  // O estado gravado só muda por ação humana — um cartão Ativo cuja validade
+  // já passou continua "Ativo" nos dados, mas mostra-se como Expirado.
+  if (c.estado === "Ativo" && diasAte(c.validade) < 0) return "Expirado";
+  return c.estado;
+}
 
 export function Cartoes() {
   const { db, currentUser, hasPerfil, addRecord, updateRecord } = useDb();
   const podeGerir = hasPerfil("Direção", "Administrativo");
   const [aberto, setAberto] = useState(false);
+  const [aCancelar, setACancelar] = useState<Cartao | null>(null);
 
   const cartoes = [...db.cartoes].sort((a, b) => b.carregadoEm.localeCompare(a.carregadoEm));
 
@@ -54,8 +66,9 @@ export function Cartoes() {
               header: "Validade",
               cell: (c) => {
                 const dias = diasAte(c.validade);
+                const aproximaOuPassou = c.estado === "Ativo" && dias <= 7;
                 return (
-                  <span className={dias <= 7 && c.estado === "Ativo" ? "font-medium text-terracotta-600" : ""}>
+                  <span className={aproximaOuPassou ? "font-medium text-terracotta-600" : ""}>
                     {formatDate(c.validade)}
                   </span>
                 );
@@ -65,32 +78,67 @@ export function Cartoes() {
               header: "Prova de receção",
               cell: (c) => (c.provaRececao ? <Badge tone="pine">Sim</Badge> : <Badge tone="neutral">Não</Badge>),
             },
-            { header: "Estado", cell: (c) => <Badge tone={estadoTone(c.estado)}>{c.estado}</Badge> },
+            {
+              header: "Estado",
+              cell: (c) => <Badge tone={estadoTone(estadoEfetivo(c))}>{estadoEfetivo(c)}</Badge>,
+            },
             {
               header: "",
               align: "right",
               cell: (c) =>
-                podeGerir && c.estado === "Por entregar" ? (
-                  <Button
-                    variant="secondary"
-                    onClick={() => {
-                      const proc = db.processos.find((p) => p.id === c.processoId);
-                      const pessoa = db.pessoas.find((p) => p.id === proc?.pessoaId);
-                      updateRecord("cartoes", c.id, {
-                        estado: "Ativo",
-                        entregueEm: new Date().toISOString().slice(0, 10),
-                        recebidoPor: pessoa?.nome ?? null,
-                        provaRececao: true,
-                      });
-                    }}
-                  >
-                    Confirmar entrega
-                  </Button>
+                podeGerir && (c.estado === "Por entregar" || c.estado === "Ativo") ? (
+                  <div className="flex justify-end gap-1.5">
+                    {c.estado === "Por entregar" && (
+                      <Button
+                        variant="secondary"
+                        onClick={() => {
+                          const proc = db.processos.find((p) => p.id === c.processoId);
+                          const pessoa = db.pessoas.find((p) => p.id === proc?.pessoaId);
+                          updateRecord("cartoes", c.id, {
+                            estado: "Ativo",
+                            entregueEm: new Date().toISOString().slice(0, 10),
+                            recebidoPor: pessoa?.nome ?? null,
+                            provaRececao: true,
+                          });
+                        }}
+                      >
+                        Confirmar entrega
+                      </Button>
+                    )}
+                    <Button variant="ghost" className="text-brick-600 hover:bg-brick-50" onClick={() => setACancelar(c)}>
+                      Cancelar
+                    </Button>
+                  </div>
                 ) : null,
             },
           ]}
         />
       </Card>
+
+      <Modal open={!!aCancelar} onClose={() => setACancelar(null)} title="Cancelar cartão">
+        <div className="space-y-4">
+          <p className="text-sm text-ink-soft">
+            Tem a certeza de que quer cancelar o cartão{" "}
+            <strong className="text-ink">{aCancelar?.numero}</strong>? Use isto para cartões perdidos,
+            recusados ou emitidos por engano. A ação não pode ser desfeita, mas o registo mantém-se
+            como histórico.
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setACancelar(null)}>
+              Voltar
+            </Button>
+            <Button
+              variant="danger"
+              onClick={() => {
+                if (aCancelar) updateRecord("cartoes", aCancelar.id, { estado: "Cancelado" });
+                setACancelar(null);
+              }}
+            >
+              Cancelar cartão
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       <Modal open={aberto} onClose={() => setAberto(false)} title="Atribuir novo cartão">
         <FormularioCartao
@@ -113,7 +161,23 @@ function FormularioCartao({
   onSubmeter: (c: ReturnType<typeof useDb>["db"]["cartoes"][number]) => void;
 }) {
   const { db } = useDb();
-  const [processoId, setProcessoId] = useState(db.processos[0]?.id ?? "");
+  const processosOrdenados = useMemo(
+    () =>
+      [...db.processos].sort((a, b) =>
+        (db.pessoas.find((pe) => pe.id === a.pessoaId)?.nome ?? "").localeCompare(
+          db.pessoas.find((pe) => pe.id === b.pessoaId)?.nome ?? "",
+          "pt-PT"
+        )
+      ),
+    [db.processos, db.pessoas]
+  );
+  const sugestoesFundo = useMemo(
+    () => Array.from(new Set([...ORIGENS_FUNDO_BASE, ...db.cartoes.map((c) => c.origemFundo)])).sort((a, b) =>
+      a.localeCompare(b, "pt-PT")
+    ),
+    [db.cartoes]
+  );
+  const [processoId, setProcessoId] = useState(processosOrdenados[0]?.id ?? "");
   const [numero, setNumero] = useState("");
   const [valor, setValor] = useState(30);
   const [origemFundo, setOrigemFundo] = useState("Câmara Municipal de Lisboa");
@@ -127,7 +191,7 @@ function FormularioCartao({
     <div className="space-y-3">
       <Field label="Beneficiário (processo)">
         <Select value={processoId} onChange={(e) => setProcessoId(e.target.value)}>
-          {db.processos.map((p) => (
+          {processosOrdenados.map((p) => (
             <option key={p.id} value={p.id}>
               nº {p.numero} — {db.pessoas.find((pe) => pe.id === p.pessoaId)?.nome}
             </option>
@@ -140,12 +204,8 @@ function FormularioCartao({
       <Field label="Valor (€)">
         <Input type="number" min={1} value={valor} onChange={(e) => setValor(Number(e.target.value))} />
       </Field>
-      <Field label="Origem do fundo">
-        <Select value={origemFundo} onChange={(e) => setOrigemFundo(e.target.value)}>
-          <option>Câmara Municipal de Lisboa</option>
-          <option>Fundo paroquial</option>
-          <option>Doação privada</option>
-        </Select>
+      <Field label="Origem do fundo" hint="Sugere origens já usadas, mas pode escrever uma nova.">
+        <SuggestInput value={origemFundo} onChange={setOrigemFundo} suggestions={sugestoesFundo} />
       </Field>
       <Field label="Validade">
         <Input type="date" value={validade} onChange={(e) => setValidade(e.target.value)} />

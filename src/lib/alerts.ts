@@ -1,5 +1,25 @@
-import type { Alerta, Database, Gravidade, TipoAlerta } from "../types";
+import type { Alerta, Database, Gravidade, Perfil, TipoAlerta } from "../types";
 import { formatDate } from "./format";
+
+// Alguns tipos de alerta expõem dados de processo/pessoa (secção 6.1: só
+// Direção e Técnico de ação social veem "processos completos") ou de cartões
+// (só Direção e Administrativo, tal como o próprio módulo Cartões). Os
+// restantes — validade, stock — não identificam ninguém, por isso ficam
+// visíveis a todos os perfis com acesso ao módulo Alertas.
+const TIPOS_PROCESSO: TipoAlerta[] = [
+  "Pessoa sem reavaliação",
+  "Documento caducado",
+  "Inscrição a renovar",
+  "Aniversário",
+  "Ausência prolongada",
+];
+
+export function alertaVisivel(alerta: Alerta, perfil: Perfil): boolean {
+  if (perfil === "Direção") return true;
+  if (TIPOS_PROCESSO.includes(alerta.tipo)) return perfil === "Técnico de ação social";
+  if (alerta.tipo === "Cartão a expirar") return perfil === "Administrativo";
+  return true;
+}
 
 function diasAte(dataISO: string, hoje: Date): number {
   const alvo = new Date(dataISO + "T00:00:00");
@@ -205,11 +225,21 @@ export function computeAlertas(db: Database): Alerta[] {
     }
   }
 
-  // Cartão a expirar — 7 dias antes
+  // Cartão a expirar — 7 dias antes. Um cartão Ativo cuja validade já passou
+  // não some do radar: fica urgente em vez de deixar de gerar alerta.
   for (const cartao of db.cartoes) {
     if (cartao.estado !== "Ativo") continue;
     const dias = diasAte(cartao.validade, hoje);
-    if (dias >= 0 && dias <= 7) {
+    if (dias < 0) {
+      gerados.push({
+        chave: `cartao-a-expirar:${cartao.id}`,
+        tipo: "Cartão a expirar",
+        gravidade: "Urgente",
+        entidade: `Cartão ${cartao.numero} · expirado há ${-dias} dias`,
+        entidadeTipo: "Cartão",
+        entidadeId: cartao.id,
+      });
+    } else if (dias <= 7) {
       gerados.push({
         chave: `cartao-a-expirar:${cartao.id}`,
         tipo: "Cartão a expirar",

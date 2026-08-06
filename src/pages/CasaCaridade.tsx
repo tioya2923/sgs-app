@@ -10,6 +10,7 @@ import {
   Modal,
   SectionHeading,
   Select,
+  tipoMovimentoTone,
 } from "../components/ui";
 import { formatDate } from "../lib/format";
 import { newId } from "../lib/id";
@@ -305,7 +306,7 @@ function EntradasConsumiveis({
         columns={[
           { header: "Data", cell: (m) => formatDate(m.data) },
           { header: "Artigo", cell: (m) => db.artigos.find((a) => a.id === m.artigoId)?.nome ?? "—" },
-          { header: "Tipo", cell: (m) => m.tipo },
+          { header: "Tipo", cell: (m) => <Badge tone={tipoMovimentoTone(m.tipo)}>{m.tipo}</Badge> },
           { header: "Quantidade", cell: (m) => m.quantidade, align: "right" },
           { header: "Origem", cell: (m) => <span className="text-ink-soft">{m.fornecedor ?? m.origemOuDestino}</span> },
         ]}

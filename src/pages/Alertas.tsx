@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useDb } from "../store/db";
-import { computeAlertas } from "../lib/alerts";
+import { alertaVisivel, computeAlertas } from "../lib/alerts";
 import {
   Badge,
   Button,
@@ -23,7 +23,10 @@ export function Alertas() {
   const [aAdiar, setAAdiar] = useState<Alerta | null>(null);
   const [motivo, setMotivo] = useState("");
 
-  const alertas = useMemo(() => computeAlertas(db), [db]);
+  const alertas = useMemo(
+    () => computeAlertas(db).filter((a) => alertaVisivel(a, currentUser.perfil)),
+    [db, currentUser.perfil]
+  );
   const visiveis = filtro === "Todos" ? alertas : alertas.filter((a) => a.estado === filtro);
 
   function aplicarEstado(alerta: Alerta, estado: EstadoAlerta, motivoAdiamento: string | null) {
