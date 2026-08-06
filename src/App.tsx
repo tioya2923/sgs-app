@@ -126,7 +126,7 @@ function AuthGate() {
 export function App() {
   return (
     <DbProvider>
-      <BrowserRouter>
+      <BrowserRouter basename="/sgs-app">
         <AuthGate />
       </BrowserRouter>
     </DbProvider>
