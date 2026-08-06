@@ -766,7 +766,7 @@ export function buildSeed(): Database {
 
   // -------------------------------------------------------------------- Utilizadores
   const utilizadores: Utilizador[] = [
-    { id: id("usr"), nome: "Pe. Rui Almeida", perfil: "Direção", email: "direcao@cssaonicolau.pt", password: "rui2026", ativo: true, ultimoAcesso: iso(0, today) },
+    { id: id("usr"), nome: "Pe. António Almeida", perfil: "Direção", email: "direcao@cssaonicolau.pt", password: "antonio2026", ativo: true, ultimoAcesso: iso(0, today) },
     { id: id("usr"), nome: "Dr.ª Marta Ribeiro", perfil: "Técnico de ação social", email: "marta.ribeiro@cssaonicolau.pt", password: "marta2026", ativo: true, ultimoAcesso: iso(0, today) },
     { id: id("usr"), nome: "Dr. Filipe Andrade", perfil: "Técnico de ação social", email: "filipe.andrade@cssaonicolau.pt", password: "filipe2026", ativo: true, ultimoAcesso: iso(-1, today) },
     { id: id("usr"), nome: "Helena Sousa", perfil: "Voluntário — distribuição", email: "helena.sousa@voluntarios.pt", password: "helena2026", ativo: true, ultimoAcesso: iso(0, today) },
