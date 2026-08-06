@@ -71,7 +71,7 @@ export function SectionHeading({
 
 export interface DataTableColumn<T> {
   header: string;
-  cell: (row: T) => ReactNode;
+  cell: (row: T, index: number) => ReactNode;
   className?: string;
   align?: "left" | "right" | "center";
 }
@@ -110,7 +110,7 @@ export function DataTable<T>({
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
+          {rows.map((row, index) => (
             <tr
               key={rowKey(row)}
               className="border-b border-pine-900/[0.06] last:border-0 hover:bg-pine-50/70"
@@ -122,7 +122,7 @@ export function DataTable<T>({
                     col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : ""
                   } ${col.className ?? ""}`}
                 >
-                  {col.cell(row)}
+                  {col.cell(row, index)}
                 </td>
               ))}
             </tr>

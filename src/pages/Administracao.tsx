@@ -13,7 +13,7 @@ import {
 } from "../components/ui";
 import { formatDate, formatDateTime } from "../lib/format";
 import { newId } from "../lib/id";
-import type { Perfil } from "../types";
+import type { Perfil, Utilizador } from "../types";
 
 const NIVEIS_ACESSO: { perfil: string; ve: string; edita: string }[] = [
   { perfil: "Direção", ve: "Tudo", edita: "Tudo e configuração" },
@@ -40,8 +40,19 @@ const PERFIS: Perfil[] = [
 ];
 
 export function Administracao() {
-  const { db, addRecord, updateRecord } = useDb();
+  const { db, currentUser, addRecord, updateRecord, removeRecord } = useDb();
   const [aberto, setAberto] = useState(false);
+  const [aRemover, setARemover] = useState<Utilizador | null>(null);
+
+  const direcoesAtivas = db.utilizadores.filter((u) => u.perfil === "Direção" && u.ativo).length;
+
+  function podeRemover(u: Utilizador): true | string {
+    if (u.id === currentUser.id) return "Não pode remover-se a si próprio.";
+    if (u.perfil === "Direção" && u.ativo && direcoesAtivas <= 1) {
+      return "Tem de haver sempre pelo menos uma Direção ativa.";
+    }
+    return true;
+  }
 
   return (
     <div>
@@ -71,9 +82,51 @@ export function Administracao() {
                 </button>
               ),
             },
+            {
+              header: "",
+              align: "right",
+              cell: (u) => {
+                const motivo = podeRemover(u);
+                return (
+                  <Button
+                    variant="ghost"
+                    disabled={motivo !== true}
+                    title={motivo === true ? undefined : motivo}
+                    onClick={() => setARemover(u)}
+                    className="text-brick-600 hover:bg-brick-50 disabled:text-ink-soft"
+                  >
+                    Remover
+                  </Button>
+                );
+              },
+            },
           ]}
         />
       </Card>
+
+      <Modal open={!!aRemover} onClose={() => setARemover(null)} title="Remover utilizador">
+        <div className="space-y-4">
+          <p className="text-sm text-ink-soft">
+            Tem a certeza de que quer remover <strong className="text-ink">{aRemover?.nome}</strong>{" "}
+            ({aRemover?.perfil})? Esta pessoa deixa de conseguir entrar no sistema. A ação não pode ser
+            desfeita.
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setARemover(null)}>
+              Cancelar
+            </Button>
+            <Button
+              variant="danger"
+              onClick={() => {
+                if (aRemover) removeRecord("utilizadores", aRemover.id);
+                setARemover(null);
+              }}
+            >
+              Remover utilizador
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       <Card title="Níveis de acesso" subtitle="Secção 6.1" className="mt-5">
         <DataTable
