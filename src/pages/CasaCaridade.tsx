@@ -193,10 +193,8 @@ function Presencas({
   const [turno, setTurno] = useState<Turno>("Almoço");
 
   const processosAcompanhados = db.processos.filter((p) => p.estado === "Ativo");
-  const presentes = new Set(
-    db.refeicoesPresenca
-      .filter((p) => p.data === data && p.turno === turno)
-      .map((p) => p.processoId)
+  const presencaPorProcesso = new Map(
+    db.refeicoesPresenca.filter((p) => p.data === data && p.turno === turno).map((p) => [p.processoId, p])
   );
 
   return (
@@ -225,34 +223,52 @@ function Presencas({
           {
             header: "Presença",
             align: "center",
-            cell: (p) =>
-              presentes.has(p.id) ? (
-                <Badge tone="pine">Presente</Badge>
-              ) : (
-                <Badge tone="neutral">Não marcado</Badge>
-              ),
+            cell: (p) => {
+              const presenca = presencaPorProcesso.get(p.id);
+              if (!presenca) return <Badge tone="neutral">Não marcado</Badge>;
+              return (
+                <Badge tone="pine">{presenca.modalidade === "Take-away" ? "Take-away" : "Presencial"}</Badge>
+              );
+            },
           },
           {
             header: "",
             align: "right",
             cell: (p) =>
               podeRegistar &&
-              !presentes.has(p.id) && (
-                <Button
-                  variant="secondary"
-                  onClick={() =>
-                    onMarcar({
-                      id: newId("rfp"),
-                      data,
-                      turno,
-                      processoId: p.id,
-                      modalidade: "Presencial",
-                      numDoses: 1,
-                    })
-                  }
-                >
-                  Marcar presença
-                </Button>
+              !presencaPorProcesso.has(p.id) && (
+                <div className="flex justify-end gap-1.5">
+                  <Button
+                    variant="secondary"
+                    onClick={() =>
+                      onMarcar({
+                        id: newId("rfp"),
+                        data,
+                        turno,
+                        processoId: p.id,
+                        modalidade: "Presencial",
+                        numDoses: 1,
+                      })
+                    }
+                  >
+                    Presencial
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    onClick={() =>
+                      onMarcar({
+                        id: newId("rfp"),
+                        data,
+                        turno,
+                        processoId: p.id,
+                        modalidade: "Take-away",
+                        numDoses: 1,
+                      })
+                    }
+                  >
+                    Take-away
+                  </Button>
+                </div>
               ),
           },
         ]}

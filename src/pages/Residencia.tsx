@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useDb } from "../store/db";
-import { Button, Card, DataTable, Field, Input, Modal, SectionHeading, Select } from "../components/ui";
+import { Button, Callout, Card, DataTable, Field, Input, Modal, SectionHeading, Select } from "../components/ui";
 import { formatDate } from "../lib/format";
 import { newId } from "../lib/id";
 import { UNIDADES } from "../lib/unidades";
@@ -32,6 +32,11 @@ export function Residencia() {
     .sort((a, b) => b.data.localeCompare(a.data));
   const entradas = movimentos.filter((m) => m.tipo === "entrada");
   const saidas = movimentos.filter((m) => m.tipo === "saída");
+
+  const disponivelArtigoAtual = db.lotes
+    .filter((l) => l.artigoId === artigoId && l.estado === "disponível")
+    .reduce((soma, l) => soma + l.quantidade, 0);
+  const saidaInsuficiente = quantidade > disponivelArtigoAtual;
 
   function registarEntrada() {
     let idArtigoFinal = artigoId;
@@ -230,10 +235,16 @@ export function Residencia() {
               ))}
             </Select>
           </Field>
-          <Field label="Quantidade">
+          <Field label="Quantidade" hint={`Disponível: ${disponivelArtigoAtual}`}>
             <Input type="number" min={1} value={quantidade} onChange={(e) => setQuantidade(Number(e.target.value))} />
           </Field>
-          <Button variant="primary" onClick={registarSaida}>
+          {saidaInsuficiente && (
+            <Callout tone="brick" title="Stock insuficiente">
+              Só há {disponivelArtigoAtual} disponível deste artigo. Reduza a quantidade antes de
+              confirmar.
+            </Callout>
+          )}
+          <Button variant="primary" onClick={registarSaida} disabled={saidaInsuficiente || disponivelArtigoAtual <= 0}>
             Registar saída
           </Button>
         </div>

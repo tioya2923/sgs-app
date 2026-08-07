@@ -246,7 +246,16 @@ function TransferirModal({
             onChange={(e) => setQuantidade(Number(e.target.value))}
           />
         </Field>
-        <Button variant="primary" onClick={submeter} disabled={disponivelOrigem <= 0}>
+        {quantidade > disponivelOrigem && disponivelOrigem > 0 && (
+          <p className="text-xs font-medium text-brick-600">
+            Só há {disponivelOrigem} disponível — reduza a quantidade.
+          </p>
+        )}
+        <Button
+          variant="primary"
+          onClick={submeter}
+          disabled={disponivelOrigem <= 0 || quantidade > disponivelOrigem}
+        >
           Confirmar transferência
         </Button>
       </div>

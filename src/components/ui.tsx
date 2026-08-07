@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Eye, EyeOff } from "lucide-react";
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
 
 // --- Estrutura básica ------------------------------------------------------
@@ -205,9 +206,12 @@ export function Field({
 }
 
 const controlClass =
-  "w-full rounded-lg border border-pine-900/15 bg-paper px-3 py-2 text-sm text-ink outline-none transition focus:border-pine-600 focus:ring-2 focus:ring-pine-600/15";
+  "rounded-lg border border-pine-900/15 bg-paper px-3 py-2 text-sm text-ink outline-none transition focus:border-pine-600 focus:ring-2 focus:ring-pine-600/15";
 
 export function Input({ onFocus, ...props }: InputHTMLAttributes<HTMLInputElement>) {
+  // Um campo numérico não precisa de esticar até à largura do formulário —
+  // só os campos de texto (nome, morada…) beneficiam de largura total.
+  const largura = props.type === "number" ? "w-28" : "w-full";
   return (
     <input
       {...props}
@@ -224,17 +228,44 @@ export function Input({ onFocus, ...props }: InputHTMLAttributes<HTMLInputElemen
         }
         onFocus?.(e);
       }}
-      className={`${controlClass} ${props.className ?? ""}`}
+      className={`${controlClass} ${largura} ${props.className ?? ""}`}
     />
   );
 }
 
+// Campo de palavra-passe com opção de mostrar/esconder — sem isto, um erro
+// de escrita (maiúsculas, teclado…) só se descobre depois de falhar o login.
+export function PasswordInput({
+  className = "",
+  ...props
+}: Omit<InputHTMLAttributes<HTMLInputElement>, "type">) {
+  const [visivel, setVisivel] = useState(false);
+  return (
+    <div className="relative">
+      <input
+        {...props}
+        type={visivel ? "text" : "password"}
+        className={`${controlClass} w-full pr-10 ${className}`}
+      />
+      <button
+        type="button"
+        tabIndex={-1}
+        onClick={() => setVisivel((v) => !v)}
+        aria-label={visivel ? "Esconder palavra-passe" : "Mostrar palavra-passe"}
+        className="absolute inset-y-0 right-0 flex items-center px-3 text-ink-soft transition hover:text-ink"
+      >
+        {visivel ? <EyeOff size={16} /> : <Eye size={16} />}
+      </button>
+    </div>
+  );
+}
+
 export function Select(props: SelectHTMLAttributes<HTMLSelectElement>) {
-  return <select {...props} className={`${controlClass} ${props.className ?? ""}`} />;
+  return <select {...props} className={`${controlClass} w-full ${props.className ?? ""}`} />;
 }
 
 export function Textarea(props: TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  return <textarea {...props} className={`${controlClass} ${props.className ?? ""}`} />;
+  return <textarea {...props} className={`${controlClass} w-full ${props.className ?? ""}`} />;
 }
 
 // --- Campo de texto com sugestões -----------------------------------------
@@ -277,7 +308,7 @@ export function SuggestInput({
           onBlur?.(e);
         }}
         autoComplete="off"
-        className={`${controlClass} ${className}`}
+        className={`${controlClass} w-full ${className}`}
       />
       {aberto && filtradas.length > 0 && (
         <ul className="absolute z-20 mt-1 max-h-48 w-full overflow-y-auto rounded-lg border border-pine-900/15 bg-paper-raised py-1 shadow-lg">

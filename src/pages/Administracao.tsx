@@ -8,6 +8,7 @@ import {
   Field,
   Input,
   Modal,
+  PasswordInput,
   SectionHeading,
   Select,
 } from "../components/ui";
@@ -26,8 +27,8 @@ const NIVEIS_ACESSO: { perfil: string; ve: string; edita: string }[] = [
 
 const DISPOSITIVOS: { dispositivo: string; faz: string }[] = [
   { dispositivo: "Computador", faz: "Todos os módulos" },
-  { dispositivo: "Tablet", faz: "Distribuição, presenças, existências, entradas" },
-  { dispositivo: "Telemóvel", faz: "Consulta, presenças e alertas. Não montagem de cabazes" },
+  { dispositivo: "Tablet", faz: "Todos os módulos" },
+  { dispositivo: "Telemóvel", faz: "Todos os módulos" },
 ];
 
 const PERFIS: Perfil[] = [
@@ -164,7 +165,7 @@ export function Administracao() {
         </div>
       </Modal>
 
-      <Card title="Níveis de acesso" subtitle="Secção 6.1" className="mt-5">
+      <Card title="Níveis de acesso" className="mt-5">
         <DataTable
           rowKey={(r) => r.perfil}
           rows={NIVEIS_ACESSO}
@@ -176,7 +177,7 @@ export function Administracao() {
         />
       </Card>
 
-      <Card title="Dispositivos" subtitle="Secção 6.2" className="mt-5">
+      <Card title="Dispositivos" className="mt-5">
         <DataTable
           rowKey={(r) => r.dispositivo}
           rows={DISPOSITIVOS}
@@ -187,18 +188,7 @@ export function Administracao() {
         />
       </Card>
 
-      <Card title="Proteção de dados" subtitle="Secção 6.3" className="mt-5">
-        <ul className="mb-4 list-disc space-y-1.5 pl-5 text-sm text-ink-soft">
-          <li>Autorização pedida a cada pessoa e para cada meio de contacto, com data, renovada anualmente.</li>
-          <li>Recolher apenas o que é realmente usado para decidir o apoio, e nada mais.</li>
-          <li>Registo de quem abriu cada processo e em que dia.</li>
-          <li>Prazos para guardar cada tipo de dado, e apagar a identificação quando o caso é encerrado.</li>
-          <li>Ficheiros exportados saem sem nomes, salvo se alguém indicar o contrário.</li>
-          <li>Quem for apoiado pode consultar, corrigir ou pedir para apagar os seus dados.</li>
-        </ul>
-      </Card>
-
-      <Card title="Registo de acessos" subtitle="Auditoria RGPD" className="mt-5">
+      <Card title="Registo de acessos" className="mt-5">
         <DataTable
           rowKey={(r) => r.id}
           rows={[...db.registosAcesso].sort((a, b) => b.dataHora.localeCompare(a.dataHora))}
@@ -236,9 +226,11 @@ function EditarUtilizadorForm({
   const [email, setEmail] = useState(utilizador.email);
   const [perfil, setPerfil] = useState<Perfil>(utilizador.perfil);
   const [novaPassword, setNovaPassword] = useState("");
+  const [confirmarPassword, setConfirmarPassword] = useState("");
 
   const rebaixando = bloquearRebaixamento && perfil !== "Direção";
-  const podeGuardar = nome.trim() && email.trim() && !rebaixando;
+  const passwordsDiferentes = novaPassword.trim() !== "" && novaPassword !== confirmarPassword;
+  const podeGuardar = nome.trim() && email.trim() && !rebaixando && !passwordsDiferentes;
 
   return (
     <div className="space-y-3">
@@ -262,8 +254,16 @@ function EditarUtilizadorForm({
         </p>
       )}
       <Field label="Nova palavra-passe" hint="Deixe em branco para manter a palavra-passe atual.">
-        <Input type="password" value={novaPassword} onChange={(e) => setNovaPassword(e.target.value)} />
+        <PasswordInput value={novaPassword} onChange={(e) => setNovaPassword(e.target.value)} />
       </Field>
+      {novaPassword.trim() && (
+        <Field label="Confirmar nova palavra-passe">
+          <PasswordInput value={confirmarPassword} onChange={(e) => setConfirmarPassword(e.target.value)} />
+        </Field>
+      )}
+      {passwordsDiferentes && (
+        <p className="text-sm text-brick-600">As duas palavras-passe têm de ser iguais.</p>
+      )}
       <Button
         variant="primary"
         disabled={!podeGuardar}
@@ -286,9 +286,11 @@ function NovoUtilizador({ onCriar }: { onCriar: (u: ReturnType<typeof useDb>["db
   const [nome, setNome] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmarPassword, setConfirmarPassword] = useState("");
   const [perfil, setPerfil] = useState<Perfil>("Técnico de ação social");
 
-  const podeCriar = nome.trim() && email.trim() && password.trim();
+  const passwordsDiferentes = password !== confirmarPassword;
+  const podeCriar = nome.trim() && email.trim() && password.trim() && !passwordsDiferentes;
 
   return (
     <div className="space-y-3">
@@ -299,8 +301,14 @@ function NovoUtilizador({ onCriar }: { onCriar: (u: ReturnType<typeof useDb>["db
         <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
       </Field>
       <Field label="Palavra-passe inicial" hint="A pessoa deve alterá-la assim que entrar pela primeira vez.">
-        <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+        <PasswordInput value={password} onChange={(e) => setPassword(e.target.value)} />
       </Field>
+      <Field label="Confirmar palavra-passe">
+        <PasswordInput value={confirmarPassword} onChange={(e) => setConfirmarPassword(e.target.value)} />
+      </Field>
+      {passwordsDiferentes && confirmarPassword && (
+        <p className="text-sm text-brick-600">As duas palavras-passe têm de ser iguais.</p>
+      )}
       <Field label="Perfil">
         <Select value={perfil} onChange={(e) => setPerfil(e.target.value as Perfil)}>
           {PERFIS.map((p) => (

@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { useDb } from "../store/db";
-import { Button, Field, Input } from "./ui";
+import { Button, Field, Input, PasswordInput } from "./ui";
 
 export function Login() {
   const { login, resetDb } = useDb();
@@ -49,8 +49,7 @@ export function Login() {
             />
           </Field>
           <Field label="Palavra-passe">
-            <Input
-              type="password"
+            <PasswordInput
               autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}

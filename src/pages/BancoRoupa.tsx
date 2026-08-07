@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useDb } from "../store/db";
-import { Button, Card, DataTable, Field, Input, Modal, SectionHeading, Select, SuggestInput } from "../components/ui";
+import { Button, Callout, Card, DataTable, Field, Input, Modal, SectionHeading, Select, SuggestInput } from "../components/ui";
 import { formatDate } from "../lib/format";
 import { newId } from "../lib/id";
 import { sugestoesBenfeitores } from "../lib/sugestoes";
@@ -69,7 +69,7 @@ function Entregas({
   artigos: ReturnType<typeof useDb>["db"]["artigos"];
   registadoPor: string;
 }) {
-  const { db, addRecord } = useDb();
+  const { db, addRecord, updateRecord } = useDb();
   const [aberto, setAberto] = useState(false);
   const [processoId, setProcessoId] = useState(db.processos[0]?.id ?? "");
   const [itens, setItens] = useState<ItemRoupa[]>([{ tipo: artigos[0]?.nome ?? "", tamanho: "M", quantidade: 1, estado: "Bom estado" }]);
@@ -80,7 +80,53 @@ function Entregas({
     setItens((prev) => prev.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
   }
 
+  // Uma entrega de roupa também é uma saída de armazém — sem isto, o stock
+  // nunca descia, e os alertas de "stock baixo/esgotado" de roupa nunca
+  // refletiam o que realmente se deu às pessoas.
+  function estoqueDisponivel(nomeArtigo: string): number {
+    const artigo = artigos.find((a) => a.nome === nomeArtigo);
+    if (!artigo) return 0;
+    return db.lotes
+      .filter((l) => l.artigoId === artigo.id && l.estado === "disponível")
+      .reduce((soma, l) => soma + l.quantidade, 0);
+  }
+
+  const itensInsuficientes = itens.filter((it) => it.quantidade > estoqueDisponivel(it.tipo));
+
   function submeter() {
+    if (itensInsuficientes.length > 0) return;
+    const processo = db.processos.find((p) => p.id === processoId);
+
+    for (const item of itens) {
+      const artigo = artigos.find((a) => a.nome === item.tipo);
+      if (!artigo) continue;
+      let restante = item.quantidade;
+      const lotesDisponiveis = db.lotes
+        .filter((l) => l.artigoId === artigo.id && l.estado === "disponível" && l.quantidade > 0)
+        .sort((a, b) => a.entrada.localeCompare(b.entrada));
+      for (const lote of lotesDisponiveis) {
+        if (restante <= 0) break;
+        const retirar = Math.min(restante, lote.quantidade);
+        updateRecord("lotes", lote.id, { quantidade: lote.quantidade - retirar });
+        addRecord("movimentos", {
+          id: newId("mov"),
+          artigoId: artigo.id,
+          loteId: lote.id,
+          tipo: "saída",
+          quantidade: retirar,
+          data: new Date().toISOString().slice(0, 10),
+          origemOuDestino: `Entrega de roupa — processo nº ${processo?.numero ?? "—"}`,
+          fornecedor: null,
+          benfeitor: null,
+          documento: null,
+          preco: null,
+          registadoPor,
+          referencia: processo ? String(processo.numero) : null,
+        });
+        restante -= retirar;
+      }
+    }
+
     addRecord("entregasRoupa", {
       id: newId("erp"),
       processoId,
@@ -142,36 +188,45 @@ function Entregas({
           </Field>
 
           <div className="space-y-2">
-            {itens.map((item, idx) => (
-              <div key={idx} className="grid grid-cols-[2fr_1fr_1fr_1fr] gap-2 rounded-lg border border-pine-900/10 p-2">
-                <Select value={item.tipo} onChange={(e) => atualizarItem(idx, { tipo: e.target.value })}>
-                  {artigos.map((a) => (
-                    <option key={a.id} value={a.nome}>
-                      {a.nome}
-                    </option>
-                  ))}
-                </Select>
-                <Input
-                  placeholder="Tamanho"
-                  value={item.tamanho}
-                  onChange={(e) => atualizarItem(idx, { tamanho: e.target.value })}
-                />
-                <Input
-                  type="number"
-                  min={1}
-                  value={item.quantidade}
-                  onChange={(e) => atualizarItem(idx, { quantidade: Number(e.target.value) })}
-                />
-                <Select
-                  value={item.estado}
-                  onChange={(e) => atualizarItem(idx, { estado: e.target.value as ItemRoupa["estado"] })}
-                >
-                  <option>Novo</option>
-                  <option>Bom estado</option>
-                  <option>Usado</option>
-                </Select>
-              </div>
-            ))}
+            {itens.map((item, idx) => {
+              const disponivel = estoqueDisponivel(item.tipo);
+              const insuficiente = item.quantidade > disponivel;
+              return (
+                <div key={idx} className="rounded-lg border border-pine-900/10 p-2">
+                  <div className="grid grid-cols-[2fr_1fr_1fr_1fr] gap-2">
+                    <Select value={item.tipo} onChange={(e) => atualizarItem(idx, { tipo: e.target.value })}>
+                      {artigos.map((a) => (
+                        <option key={a.id} value={a.nome}>
+                          {a.nome}
+                        </option>
+                      ))}
+                    </Select>
+                    <Input
+                      placeholder="Tamanho"
+                      value={item.tamanho}
+                      onChange={(e) => atualizarItem(idx, { tamanho: e.target.value })}
+                    />
+                    <Input
+                      type="number"
+                      min={1}
+                      value={item.quantidade}
+                      onChange={(e) => atualizarItem(idx, { quantidade: Number(e.target.value) })}
+                    />
+                    <Select
+                      value={item.estado}
+                      onChange={(e) => atualizarItem(idx, { estado: e.target.value as ItemRoupa["estado"] })}
+                    >
+                      <option>Novo</option>
+                      <option>Bom estado</option>
+                      <option>Usado</option>
+                    </Select>
+                  </div>
+                  <p className={`mt-1 text-xs ${insuficiente ? "font-medium text-brick-600" : "text-ink-soft"}`}>
+                    disponível: {disponivel}
+                  </p>
+                </div>
+              );
+            })}
             <button
               className="text-xs font-medium text-pine-700 hover:underline"
               onClick={() => setItens((prev) => [...prev, { tipo: artigos[0]?.nome ?? "", tamanho: "M", quantidade: 1, estado: "Bom estado" }])}
@@ -180,7 +235,13 @@ function Entregas({
             </button>
           </div>
 
-          <Button variant="primary" onClick={submeter}>
+          {itensInsuficientes.length > 0 && (
+            <Callout tone="brick" title="Stock insuficiente">
+              Reduza a quantidade ou remova o artigo — o armazém não tem o suficiente para esta entrega.
+            </Callout>
+          )}
+
+          <Button variant="primary" onClick={submeter} disabled={itensInsuficientes.length > 0}>
             Registar entrega
           </Button>
         </div>
