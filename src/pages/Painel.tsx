@@ -15,6 +15,13 @@ function inicioMesISO() {
   return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10);
 }
 
+function saudacao(): string {
+  const hora = new Date().getHours();
+  if (hora < 12) return "Bom dia";
+  if (hora < 20) return "Boa tarde";
+  return "Boa noite";
+}
+
 export function Painel() {
   const { db, currentUser } = useDb();
   const perfil = currentUser.perfil;
@@ -36,7 +43,7 @@ export function Painel() {
   const veEstatisticasMes = veBancoAlimentos || veCasaCaridade || veCasos;
 
   const alertas = useMemo(
-    () => computeAlertas(db).filter((a) => alertaVisivel(a, perfil)),
+    () => computeAlertas(db).filter((a) => alertaVisivel(a, perfil, db)),
     [db, perfil]
   );
   const alertasAtivos = alertas.filter((a) => a.estado === "Ativo");
@@ -62,8 +69,7 @@ export function Painel() {
     <div>
       <SectionHeading
         eyebrow={formatDateLong(hoje)}
-        title={`Bom dia, ${currentUser.nome.split(" ")[0]}`}
-        subtitle="Resumo do dia — atendimentos, cabazes, refeições, roupa, entradas, alertas e estatísticas do mês."
+        title={`${saudacao()}, ${currentUser.nome.split(" ")[0]}`}
       />
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">

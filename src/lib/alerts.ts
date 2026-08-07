@@ -1,11 +1,13 @@
-import type { Alerta, Database, Gravidade, Perfil, TipoAlerta } from "../types";
+import type { ArmazemCodigo, Alerta, Database, Gravidade, Perfil, TipoAlerta } from "../types";
 import { formatDate } from "./format";
 
-// Alguns tipos de alerta expõem dados de processo/pessoa (secção 6.1: só
-// Direção e Técnico de ação social veem "processos completos") ou de cartões
-// (só Direção e Administrativo, tal como o próprio módulo Cartões). Os
-// restantes — validade, stock — não identificam ninguém, por isso ficam
-// visíveis a todos os perfis com acesso ao módulo Alertas.
+// Um alerta só deve ser visível a quem tem, de facto, capacidade de o
+// resolver — não basta "ver", tem de poder agir. Por isso cada tipo aponta
+// para os mesmos perfis que já podem editar a área de onde o alerta vem,
+// em vez de ficar aberto a todos por omissão.
+
+// Processo/pessoa (secção 6.1: só Direção e Técnico veem "processos
+// completos" e só eles editam fichas, acompanhamento e programas).
 const TIPOS_PROCESSO: TipoAlerta[] = [
   "Pessoa sem reavaliação",
   "Documento caducado",
@@ -14,11 +16,44 @@ const TIPOS_PROCESSO: TipoAlerta[] = [
   "Ausência prolongada",
 ];
 
-export function alertaVisivel(alerta: Alerta, perfil: Perfil): boolean {
+// Quem regista entradas em cada armazém (espelha exatamente o podeRegistar/
+// podeRegistarEntrada já usado em cada página de existências).
+const EDITA_ARMAZEM: Record<ArmazemCodigo, Perfil[]> = {
+  BSA: ["Direção", "Armazém"],
+  RES: ["Direção", "Armazém", "Cozinha"],
+  CDC: ["Direção", "Armazém", "Cozinha"],
+  BSR: ["Direção", "Armazém", "Voluntário — distribuição"],
+};
+
+const TIPOS_STOCK: TipoAlerta[] = ["Validade curta", "Stock abaixo do mínimo", "Produto esgotado"];
+
+function artigoDoAlerta(alerta: Alerta, db: Database) {
+  if (!alerta.entidadeId) return null;
+  if (alerta.entidadeTipo === "Artigo") {
+    return db.artigos.find((a) => a.id === alerta.entidadeId) ?? null;
+  }
+  if (alerta.entidadeTipo === "Lote") {
+    const lote = db.lotes.find((l) => l.id === alerta.entidadeId);
+    return lote ? db.artigos.find((a) => a.id === lote.artigoId) ?? null : null;
+  }
+  return null;
+}
+
+export function alertaVisivel(alerta: Alerta, perfil: Perfil, db: Database): boolean {
   if (perfil === "Direção") return true;
+
   if (TIPOS_PROCESSO.includes(alerta.tipo)) return perfil === "Técnico de ação social";
+
   if (alerta.tipo === "Cartão a expirar") return perfil === "Administrativo";
-  return true;
+
+  if (TIPOS_STOCK.includes(alerta.tipo)) {
+    const artigo = artigoDoAlerta(alerta, db);
+    const armazem = artigo ? db.armazens.find((a) => a.id === artigo.armazemId) : null;
+    if (!armazem) return false;
+    return EDITA_ARMAZEM[armazem.codigo].includes(perfil);
+  }
+
+  return false;
 }
 
 function diasAte(dataISO: string, hoje: Date): number {

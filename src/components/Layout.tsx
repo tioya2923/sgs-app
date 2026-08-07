@@ -22,7 +22,7 @@ export function Layout() {
   }, [location.pathname]);
 
   const alertasAtivos = useMemo(
-    () => computeAlertas(db).filter((a) => a.estado === "Ativo" && alertaVisivel(a, currentUser.perfil)),
+    () => computeAlertas(db).filter((a) => a.estado === "Ativo" && alertaVisivel(a, currentUser.perfil, db)),
     [db, currentUser.perfil]
   );
   const urgentes = alertasAtivos.filter((a) => a.gravidade === "Urgente").length;

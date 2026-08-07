@@ -24,7 +24,7 @@ export function Alertas() {
   const [motivo, setMotivo] = useState("");
 
   const alertas = useMemo(
-    () => computeAlertas(db).filter((a) => alertaVisivel(a, currentUser.perfil)),
+    () => computeAlertas(db).filter((a) => alertaVisivel(a, currentUser.perfil, db)),
     [db, currentUser.perfil]
   );
   const visiveis = filtro === "Todos" ? alertas : alertas.filter((a) => a.estado === filtro);

@@ -177,8 +177,25 @@ function MontarCabaz({
     setLinhas((prev) => [...prev, { artigoId, quantidade: 1 }]);
   }
 
+  function adicionarArtigo() {
+    if (!novoArtigoId || linhas.some((l) => l.artigoId === novoArtigoId)) return;
+    setLinhas((prev) => [...prev, { artigoId: novoArtigoId, quantidade: 1 }]);
+    setNovoArtigoId("");
+  }
+
+  // Stock realmente disponível por artigo (soma dos lotes disponíveis) —
+  // usado para avisar antes de confirmar uma entrega que o armazém não tem
+  // como cumprir.
+  function estoqueDisponivel(artigoId: string): number {
+    return db.lotes
+      .filter((l) => l.artigoId === artigoId && l.estado === "disponível")
+      .reduce((soma, l) => soma + l.quantidade, 0);
+  }
+
+  const linhasInsuficientes = linhas.filter((l) => l.quantidade > estoqueDisponivel(l.artigoId));
+
   function confirmarEntrega() {
-    if (!agregado || !processo || !modelo) return;
+    if (!agregado || !processo || !modelo || linhasInsuficientes.length > 0) return;
     const consumos: { lote: Lote; movimento: Movimento }[] = [];
 
     for (const linha of linhas) {
@@ -296,30 +313,79 @@ function MontarCabaz({
               <EmptyState message="Sem artigos no cabaz." />
             ) : (
               <div className="divide-y divide-pine-900/[0.06]">
-                {linhas.map((l) => (
-                  <div key={l.artigoId} className="flex items-center gap-3 py-2.5">
-                    <span className="min-w-0 flex-1 truncate text-sm text-ink">
-                      {db.artigos.find((a) => a.id === l.artigoId)?.nome ?? "—"}
-                    </span>
-                    <input
-                      type="number"
-                      min={0}
-                      value={l.quantidade}
-                      onChange={(e) => atualizarQuantidade(l.artigoId, Number(e.target.value))}
-                      onFocus={(e) => {
-                        const el = e.target;
-                        window.setTimeout(() => el.select(), 0);
-                      }}
-                      className="w-16 shrink-0 rounded-md border border-pine-900/15 bg-paper px-2 py-1 text-right text-sm"
-                    />
-                    <button
-                      onClick={() => removerLinha(l.artigoId)}
-                      className="shrink-0 text-xs text-ink-soft hover:text-brick-600"
-                    >
-                      remover
-                    </button>
-                  </div>
-                ))}
+                {linhas.map((l) => {
+                  const disponivel = estoqueDisponivel(l.artigoId);
+                  const insuficiente = l.quantidade > disponivel;
+                  return (
+                    <div key={l.artigoId} className="flex items-center gap-3 py-2.5">
+                      <div className="min-w-0 flex-1">
+                        <span className="block truncate text-sm text-ink">
+                          {db.artigos.find((a) => a.id === l.artigoId)?.nome ?? "—"}
+                        </span>
+                        <span className={`text-xs ${insuficiente ? "font-medium text-brick-600" : "text-ink-soft"}`}>
+                          disponível: {disponivel}
+                        </span>
+                      </div>
+                      <input
+                        type="number"
+                        min={0}
+                        value={l.quantidade}
+                        onChange={(e) => atualizarQuantidade(l.artigoId, Number(e.target.value))}
+                        onFocus={(e) => {
+                          const el = e.target;
+                          window.setTimeout(() => el.select(), 0);
+                        }}
+                        className={`w-16 shrink-0 rounded-md border bg-paper px-2 py-1 text-right text-sm ${
+                          insuficiente ? "border-brick-500" : "border-pine-900/15"
+                        }`}
+                      />
+                      <button
+                        onClick={() => removerLinha(l.artigoId)}
+                        className="shrink-0 text-xs text-ink-soft hover:text-brick-600"
+                      >
+                        remover
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {podeComporLivremente && (
+              <div className="mt-4 flex items-end gap-2">
+                <div className="flex-1">
+                  <Field label="Adicionar artigo do armazém">
+                    <Select value={novoArtigoId} onChange={(e) => setNovoArtigoId(e.target.value)}>
+                      <option value="">Selecionar…</option>
+                      {artigosArmazem
+                        .filter((a) => !linhas.some((l) => l.artigoId === a.id))
+                        .map((a) => (
+                          <option key={a.id} value={a.id}>
+                            {a.nome}
+                          </option>
+                        ))}
+                    </Select>
+                  </Field>
+                </div>
+                <Button variant="secondary" onClick={adicionarArtigo} disabled={!novoArtigoId}>
+                  + Adicionar
+                </Button>
+              </div>
+            )}
+
+            {linhasInsuficientes.length > 0 && (
+              <div className="mt-4">
+                <Callout tone="brick" title="Stock insuficiente">
+                  <ul className="list-disc space-y-0.5 pl-4">
+                    {linhasInsuficientes.map((l) => (
+                      <li key={l.artigoId}>
+                        {db.artigos.find((a) => a.id === l.artigoId)?.nome ?? "—"} — pedido{" "}
+                        {l.quantidade}, disponível {estoqueDisponivel(l.artigoId)}
+                      </li>
+                    ))}
+                  </ul>
+                  Reduza a quantidade, remova o artigo, ou registe uma entrada antes de confirmar.
+                </Callout>
               </div>
             )}
 
@@ -342,7 +408,11 @@ function MontarCabaz({
             )}
 
             <div className="mt-5 flex justify-end">
-              <Button variant="primary" disabled={!processo} onClick={confirmarEntrega}>
+              <Button
+                variant="primary"
+                disabled={!processo || linhasInsuficientes.length > 0}
+                onClick={confirmarEntrega}
+              >
                 Confirmar entrega
               </Button>
             </div>
@@ -404,9 +474,39 @@ function Modelos({
   podeGerir: boolean;
   artigosArmazem: ReturnType<typeof useDb>["db"]["artigos"];
 }) {
-  const { db } = useDb();
+  const { db, updateRecord } = useDb();
   const [abertoId, setAbertoId] = useState<string | null>(null);
+  const [aEditar, setAEditar] = useState(false);
+  const [linhasEdit, setLinhasEdit] = useState<LinhaModeloCabaz[]>([]);
+  const [novoArtigoId, setNovoArtigoId] = useState("");
   const aberto = db.modelosCabaz.find((m) => m.id === abertoId) ?? null;
+
+  function abrirEdicao() {
+    if (!aberto) return;
+    setLinhasEdit(aberto.linhas.map((l) => ({ ...l })));
+    setNovoArtigoId("");
+    setAEditar(true);
+  }
+
+  function guardarEdicao() {
+    if (!aberto) return;
+    updateRecord("modelosCabaz", aberto.id, { linhas: linhasEdit, versao: aberto.versao + 1 });
+    setAEditar(false);
+  }
+
+  function atualizarQuantidadeEdit(artigoId: string, quantidade: number) {
+    setLinhasEdit((prev) => prev.map((l) => (l.artigoId === artigoId ? { ...l, quantidade } : l)));
+  }
+
+  function removerLinhaEdit(artigoId: string) {
+    setLinhasEdit((prev) => prev.filter((l) => l.artigoId !== artigoId));
+  }
+
+  function adicionarLinhaEdit() {
+    if (!novoArtigoId || linhasEdit.some((l) => l.artigoId === novoArtigoId)) return;
+    setLinhasEdit((prev) => [...prev, { artigoId: novoArtigoId, quantidade: 1 }]);
+    setNovoArtigoId("");
+  }
 
   return (
     <Card title="Modelos de cabaz" subtitle="Cada modelo guarda a sua versão">
@@ -432,19 +532,106 @@ function Modelos({
       />
 
       {aberto && (
-        <Modal open onClose={() => setAbertoId(null)} title={`${aberto.nome} (v${aberto.versao})`}>
-          <DataTable
-            rowKey={(l) => l.artigoId}
-            rows={aberto.linhas}
-            columns={[
-              { header: "Artigo", cell: (l) => db.artigos.find((a) => a.id === l.artigoId)?.nome ?? artigosArmazem.find(a=>a.id===l.artigoId)?.nome ?? "—" },
-              { header: "Quantidade", cell: (l) => l.quantidade, align: "right" },
-            ]}
-          />
-          {!podeGerir && (
-            <p className="mt-4 text-xs text-ink-soft">
-              A edição de modelos está reservada à Direção e à Técnica de ação social.
-            </p>
+        <Modal
+          open
+          onClose={() => {
+            setAbertoId(null);
+            setAEditar(false);
+          }}
+          title={`${aberto.nome} (v${aberto.versao})`}
+        >
+          {podeGerir && (
+            <div className="mb-4 flex justify-end">
+              <Button variant="secondary" onClick={() => (aEditar ? setAEditar(false) : abrirEdicao())}>
+                {aEditar ? "Cancelar edição" : "Editar composição"}
+              </Button>
+            </div>
+          )}
+
+          {aEditar ? (
+            <div className="space-y-4">
+              {linhasEdit.length === 0 ? (
+                <EmptyState message="Sem artigos neste modelo." />
+              ) : (
+                <div className="divide-y divide-pine-900/[0.06]">
+                  {linhasEdit.map((l) => (
+                    <div key={l.artigoId} className="flex items-center gap-3 py-2.5">
+                      <span className="min-w-0 flex-1 truncate text-sm text-ink">
+                        {db.artigos.find((a) => a.id === l.artigoId)?.nome ?? "—"}
+                      </span>
+                      <input
+                        type="number"
+                        min={0}
+                        value={l.quantidade}
+                        onChange={(e) => atualizarQuantidadeEdit(l.artigoId, Number(e.target.value))}
+                        onFocus={(e) => {
+                          const el = e.target;
+                          window.setTimeout(() => el.select(), 0);
+                        }}
+                        className="w-16 shrink-0 rounded-md border border-pine-900/15 bg-paper px-2 py-1 text-right text-sm"
+                      />
+                      <button
+                        onClick={() => removerLinhaEdit(l.artigoId)}
+                        className="shrink-0 text-xs text-ink-soft hover:text-brick-600"
+                      >
+                        remover
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="flex items-end gap-2">
+                <div className="flex-1">
+                  <Field label="Adicionar artigo">
+                    <Select value={novoArtigoId} onChange={(e) => setNovoArtigoId(e.target.value)}>
+                      <option value="">Selecionar…</option>
+                      {artigosArmazem
+                        .filter((a) => !linhasEdit.some((l) => l.artigoId === a.id))
+                        .map((a) => (
+                          <option key={a.id} value={a.id}>
+                            {a.nome}
+                          </option>
+                        ))}
+                    </Select>
+                  </Field>
+                </div>
+                <Button variant="secondary" onClick={adicionarLinhaEdit} disabled={!novoArtigoId}>
+                  + Adicionar
+                </Button>
+              </div>
+
+              <p className="text-xs text-ink-soft">
+                Guardar cria a versão v{aberto.versao + 1} — entregas já registadas continuam a referir
+                a v{aberto.versao}, tal como ficaram.
+              </p>
+
+              <Button variant="primary" onClick={guardarEdicao} disabled={linhasEdit.length === 0}>
+                Guardar alterações
+              </Button>
+            </div>
+          ) : (
+            <>
+              <DataTable
+                rowKey={(l) => l.artigoId}
+                rows={aberto.linhas}
+                columns={[
+                  {
+                    header: "Artigo",
+                    cell: (l) =>
+                      db.artigos.find((a) => a.id === l.artigoId)?.nome ??
+                      artigosArmazem.find((a) => a.id === l.artigoId)?.nome ??
+                      "—",
+                  },
+                  { header: "Quantidade", cell: (l) => l.quantidade, align: "right" },
+                ]}
+              />
+              {!podeGerir && (
+                <p className="mt-4 text-xs text-ink-soft">
+                  A edição de modelos está reservada à Direção e à Técnica de ação social.
+                </p>
+              )}
+            </>
           )}
         </Modal>
       )}
