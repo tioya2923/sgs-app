@@ -346,7 +346,7 @@ function EntradasConsumiveis({
               <Field label="Nome do novo artigo">
                 <Input value={novoNome} onChange={(e) => setNovoNome(e.target.value)} placeholder="ex.: Sacos de lixo 50L" autoFocus />
               </Field>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <Field label="Categoria">
                   <Input value={novaCategoria} onChange={(e) => setNovaCategoria(e.target.value)} />
                 </Field>

@@ -262,7 +262,7 @@ function NovaMensagem({
         </Callout>
       )}
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Field label="Canal">
           <Select value={canal} onChange={(e) => setCanal(e.target.value as CanalMensagem)}>
             <option>SMS</option>

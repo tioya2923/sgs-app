@@ -193,7 +193,7 @@ function Entregas({
               const insuficiente = item.quantidade > disponivel;
               return (
                 <div key={idx} className="rounded-lg border border-pine-900/10 p-2">
-                  <div className="grid grid-cols-[2fr_1fr_1fr_1fr] gap-2">
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-[2fr_1fr_1fr_1fr]">
                     <Select value={item.tipo} onChange={(e) => atualizarItem(idx, { tipo: e.target.value })}>
                       {artigos.map((a) => (
                         <option key={a.id} value={a.nome}>
