@@ -3,6 +3,7 @@ import { useDb } from "../store/db";
 import {
   Badge,
   Button,
+  Callout,
   Card,
   DataTable,
   Field,
@@ -10,6 +11,7 @@ import {
   Modal,
   SectionHeading,
   Select,
+  TabGroup,
   tipoMovimentoTone,
 } from "../components/ui";
 import { formatDate } from "../lib/format";
@@ -30,25 +32,16 @@ export function CasaCaridade() {
     <div>
       <SectionHeading title="Casa da Caridade" />
 
-      <div className="mb-5 flex gap-1 rounded-lg border border-pine-900/15 bg-paper-raised p-1">
-        {(
-          [
-            ["contagem", "Contagem de refeições"],
-            ["presencas", "Presenças nominais"],
-            ["entradas", "Entradas e consumíveis"],
-          ] as [Tab, string][]
-        ).map(([value, label]) => (
-          <button
-            key={value}
-            onClick={() => setTab(value)}
-            className={`rounded-md px-3.5 py-1.5 text-sm font-medium transition ${
-              tab === value ? "bg-pine-800 text-pine-50" : "text-ink-soft hover:text-ink"
-            }`}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      <TabGroup
+        className="mb-5"
+        value={tab}
+        onChange={setTab}
+        options={[
+          { value: "contagem", label: "Contagem de refeições" },
+          { value: "presencas", label: "Presenças nominais" },
+          { value: "entradas", label: "Entradas e consumíveis" },
+        ]}
+      />
 
       {tab === "contagem" && (
         <Contagem podeRegistar={podeRegistar} onAdicionar={(c) => addRecord("refeicoesContagem", c)} />
@@ -81,19 +74,24 @@ function Contagem({
     numPessoas: 0,
     sopas: 0,
     pratos: 0,
-    alternativaVegetariana: 0,
     sobremesas: 0,
     pao: 0,
     aguas: 0,
-    takeaway: 0,
   });
 
   const contagens = [...db.refeicoesContagem].sort((a, b) => b.data.localeCompare(a.data));
 
+  const hoje = new Date().toISOString().slice(0, 10);
+  // Uma contagem é por dia + turno — registar duas vezes o mesmo turno no
+  // mesmo dia duplicava os números em vez de os corrigir (para corrigir um
+  // valor já registado, isso faz-se editando, não acrescentando outra linha).
+  const jaRegistadoHoje = contagens.some((c) => c.data === hoje && c.turno === turno);
+
   function submeter() {
+    if (jaRegistadoHoje) return;
     onAdicionar({
       id: newId("rfc"),
-      data: new Date().toISOString().slice(0, 10),
+      data: hoje,
       turno,
       ...campos,
     });
@@ -102,11 +100,9 @@ function Contagem({
       numPessoas: 0,
       sopas: 0,
       pratos: 0,
-      alternativaVegetariana: 0,
       sobremesas: 0,
       pao: 0,
       aguas: 0,
-      takeaway: 0,
     });
   }
 
@@ -122,6 +118,7 @@ function Contagem({
       }
     >
       <DataTable
+        dense
         rowKey={(c) => c.id}
         rows={contagens}
         columns={[
@@ -130,11 +127,9 @@ function Contagem({
           { header: "Pessoas", cell: (c) => c.numPessoas, align: "right" },
           { header: "Sopas", cell: (c) => c.sopas, align: "right" },
           { header: "Pratos", cell: (c) => c.pratos, align: "right" },
-          { header: "Vegetariana", cell: (c) => c.alternativaVegetariana, align: "right" },
           { header: "Sobremesas", cell: (c) => c.sobremesas, align: "right" },
           { header: "Pão", cell: (c) => c.pao, align: "right" },
           { header: "Águas", cell: (c) => c.aguas, align: "right" },
-          { header: "Take-away", cell: (c) => c.takeaway, align: "right" },
         ]}
       />
 
@@ -152,11 +147,9 @@ function Contagem({
                 ["numPessoas", "Nº de pessoas"],
                 ["sopas", "Sopas"],
                 ["pratos", "Pratos"],
-                ["alternativaVegetariana", "Alt. vegetariana"],
                 ["sobremesas", "Sobremesas"],
                 ["pao", "Pão"],
                 ["aguas", "Águas"],
-                ["takeaway", "Take-away"],
               ] as [keyof typeof campos, string][]
             ).map(([key, label]) => (
               <Field key={key} label={label}>
@@ -169,7 +162,13 @@ function Contagem({
               </Field>
             ))}
           </div>
-          <Button variant="primary" onClick={submeter}>
+          {jaRegistadoHoje && (
+            <Callout tone="brick" title="Contagem já registada">
+              Já existe uma contagem para o {turno.toLowerCase()} de hoje — não é possível registar o
+              mesmo turno duas vezes no mesmo dia.
+            </Callout>
+          )}
+          <Button variant="primary" onClick={submeter} disabled={jaRegistadoHoje}>
             Guardar
           </Button>
         </div>

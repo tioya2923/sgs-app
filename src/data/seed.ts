@@ -621,11 +621,9 @@ export function buildSeed(): Database {
         numPessoas,
         sopas: Math.round(numPessoas * 0.7),
         pratos: numPessoas,
-        alternativaVegetariana: Math.round(numPessoas * 0.15),
         sobremesas: Math.round(numPessoas * 0.5),
         pao: numPessoas,
         aguas: Math.round(numPessoas * 0.8),
-        takeaway: Math.round(numPessoas * 0.1),
       });
 
       acompanhadosRefeicao.forEach((processo, idx) => {

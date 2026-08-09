@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import { useDb } from "../store/db";
-import { alertaVisivel, computeAlertas } from "../lib/alerts";
+import { alertaVisivel, compararPorGravidade, computeAlertas } from "../lib/alerts";
 import { moduloVisivel, podeAceder } from "../lib/nav";
 import { Badge, Card, DataTable, SectionHeading, StatTile, gravidadeTone } from "../components/ui";
 import { formatDate, formatDateLong } from "../lib/format";
@@ -46,7 +46,10 @@ export function Painel() {
     () => computeAlertas(db).filter((a) => alertaVisivel(a, perfil, db)),
     [db, perfil]
   );
-  const alertasAtivos = alertas.filter((a) => a.estado === "Ativo");
+  // A prévia do painel só mostra os primeiros 6 — têm de ser os mais urgentes,
+  // não os primeiros a serem gerados (senão um cartão urgente pode ficar fora
+  // da vista só por haver mais validades curtas na lista).
+  const alertasAtivos = alertas.filter((a) => a.estado === "Ativo").sort(compararPorGravidade);
 
   const atendimentosHoje = db.atendimentos.filter((a) => a.data === hoje);
   const cabazesHoje = db.entregasCabaz.filter((e) => e.dataPrevista === hoje);
@@ -114,7 +117,11 @@ export function Painel() {
                 cell: (a) => <Badge tone={gravidadeTone(a.gravidade)}>{a.gravidade}</Badge>,
               },
               { header: "Tipo", cell: (a) => a.tipo },
-              { header: "Entidade", cell: (a) => <span className="text-ink-soft">{a.entidade}</span> },
+              {
+                header: "Entidade",
+                cell: (a) => <span className="text-ink-soft">{a.entidade}</span>,
+                className: "whitespace-normal",
+              },
             ]}
           />
         </Card>

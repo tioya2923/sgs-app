@@ -92,6 +92,15 @@ export function DbProvider({ children }: { children: ReactNode }) {
     return db.utilizadores.find((u) => u.id === session) ?? db.utilizadores[0];
   }, [db.utilizadores, session]);
 
+  useEffect(() => {
+    // Se a conta associada à sessão foi removida ou desativada entretanto
+    // (ex.: noutro separador), a sessão tem de cair — nunca continuar
+    // silenciosamente como se fosse outro utilizador (o primeiro da lista).
+    if (session && !db.utilizadores.some((u) => u.id === session && u.ativo)) {
+      setSession(null);
+    }
+  }, [session, db.utilizadores]);
+
   const addRecord = useCallback<DbContextValue["addRecord"]>((key, record) => {
     setDb((prev) => ({
       ...prev,

@@ -233,11 +233,9 @@ export interface RefeicaoContagem {
   numPessoas: number;
   sopas: number;
   pratos: number;
-  alternativaVegetariana: number;
   sobremesas: number;
   pao: number;
   aguas: number;
-  takeaway: number;
 }
 
 export interface RefeicaoPresenca {

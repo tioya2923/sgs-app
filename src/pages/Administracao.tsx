@@ -196,7 +196,11 @@ export function Administracao() {
             { header: "Data e hora", cell: (r) => formatDateTime(r.dataHora) },
             { header: "Utilizador", cell: (r) => r.utilizador },
             { header: "Ação", cell: (r) => r.acao },
-            { header: "Entidade", cell: (r) => <span className="text-ink-soft">{r.entidade}</span> },
+            {
+              header: "Entidade",
+              cell: (r) => <span className="text-ink-soft">{r.entidade}</span>,
+              className: "whitespace-normal",
+            },
           ]}
         />
       </Card>

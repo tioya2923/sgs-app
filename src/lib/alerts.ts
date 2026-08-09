@@ -56,6 +56,13 @@ export function alertaVisivel(alerta: Alerta, perfil: Perfil, db: Database): boo
   return false;
 }
 
+const PESO_GRAVIDADE: Record<Gravidade, number> = { Urgente: 0, Atenção: 1, Informação: 2 };
+
+/** Ordena por gravidade (Urgente primeiro) — para listas que truncam ou que servem de triagem. */
+export function compararPorGravidade(a: Alerta, b: Alerta): number {
+  return PESO_GRAVIDADE[a.gravidade] - PESO_GRAVIDADE[b.gravidade];
+}
+
 function diasAte(dataISO: string, hoje: Date): number {
   const alvo = new Date(dataISO + "T00:00:00");
   return Math.round((alvo.getTime() - hoje.getTime()) / (24 * 60 * 60 * 1000));
@@ -95,7 +102,7 @@ export function computeAlertas(db: Database): Alerta[] {
         chave: `validade-curta:${lote.id}`,
         tipo: "Validade curta",
         gravidade: dias <= 7 ? "Urgente" : "Atenção",
-        entidade: `${artigo?.nome ?? "Artigo"} · lote de ${lote.quantidade} · vence a ${formatDate(lote.validade)}`,
+        entidade: `${artigo?.nome ?? "Artigo"} · lote de ${lote.quantidade} · caduca a ${formatDate(lote.validade)}`,
         entidadeTipo: "Lote",
         entidadeId: lote.id,
       });
@@ -177,20 +184,24 @@ export function computeAlertas(db: Database): Alerta[] {
     }
   }
 
-  // Inscrição a renovar — renovação anual, 30 dias antes do fim
+  // Inscrição a renovar — renovação anual, 30 dias antes do fim. Uma
+  // inscrição cujo prazo já passou não some do radar: fica urgente em vez
+  // de deixar de gerar alerta (mesma lógica do cartão a expirar).
   for (const inscricao of db.inscricoes) {
     if (inscricao.estado !== "Ativa") continue;
     const fim = new Date(inscricao.data + "T00:00:00");
     fim.setFullYear(fim.getFullYear() + 1);
     const dias = diasAte(fim.toISOString().slice(0, 10), hoje);
-    if (dias >= 0 && dias <= 30) {
+    if (dias <= 30) {
       const processo = db.processos.find((p) => p.id === inscricao.processoId);
       const pessoa = processo ? db.pessoas.find((p) => p.id === processo.pessoaId) : undefined;
       gerados.push({
         chave: `inscricao-a-renovar:${inscricao.id}`,
         tipo: "Inscrição a renovar",
-        gravidade: "Atenção",
-        entidade: `${pessoa?.nome ?? "Pessoa"} · ${inscricao.programa} · renova em ${dias} dias`,
+        gravidade: dias < 0 ? "Urgente" : "Atenção",
+        entidade: `${pessoa?.nome ?? "Pessoa"} · ${inscricao.programa} · ${
+          dias < 0 ? `renovação vencida há ${-dias} dias` : `renova em ${dias} dias`
+        }`,
         entidadeTipo: "Inscrição",
         entidadeId: inscricao.id,
       });
@@ -260,26 +271,36 @@ export function computeAlertas(db: Database): Alerta[] {
     }
   }
 
-  // Cartão a expirar — 7 dias antes. Um cartão Ativo cuja validade já passou
-  // não some do radar: fica urgente em vez de deixar de gerar alerta.
+  // Cartão a expirar — 7 dias antes de um cartão Ativo ficar sem prazo, ou
+  // 14 dias antes de um cartão "Por entregar" perder a validade sem nunca
+  // ter chegado ao beneficiário (precisa de mais tempo de aviso, porque
+  // ainda falta agendar a entrega física). Um cartão cuja validade já
+  // passou não some do radar: fica urgente em vez de deixar de gerar alerta,
+  // seja qual for o estado.
   for (const cartao of db.cartoes) {
-    if (cartao.estado !== "Ativo") continue;
+    if (cartao.estado !== "Ativo" && cartao.estado !== "Por entregar") continue;
+    const porEntregar = cartao.estado === "Por entregar";
+    const janelaAviso = porEntregar ? 14 : 7;
     const dias = diasAte(cartao.validade, hoje);
     if (dias < 0) {
       gerados.push({
         chave: `cartao-a-expirar:${cartao.id}`,
         tipo: "Cartão a expirar",
         gravidade: "Urgente",
-        entidade: `Cartão ${cartao.numero} · expirado há ${-dias} dias`,
+        entidade: `Cartão ${cartao.numero} · ${
+          porEntregar ? "nunca entregue, expirou" : "expirado"
+        } há ${-dias} dias`,
         entidadeTipo: "Cartão",
         entidadeId: cartao.id,
       });
-    } else if (dias <= 7) {
+    } else if (dias <= janelaAviso) {
       gerados.push({
         chave: `cartao-a-expirar:${cartao.id}`,
         tipo: "Cartão a expirar",
-        gravidade: "Atenção",
-        entidade: `Cartão ${cartao.numero} · expira em ${dias} dias`,
+        gravidade: porEntregar && dias <= 7 ? "Urgente" : "Atenção",
+        entidade: `Cartão ${cartao.numero} · ${
+          porEntregar ? "ainda por entregar, expira" : "expira"
+        } em ${dias} dias`,
         entidadeTipo: "Cartão",
         entidadeId: cartao.id,
       });

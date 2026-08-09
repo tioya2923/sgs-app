@@ -10,6 +10,7 @@ import {
   Modal,
   SectionHeading,
   Select,
+  StatTile,
   SuggestInput,
   estadoTone,
 } from "../components/ui";
@@ -20,9 +21,11 @@ import type { Cartao } from "../types";
 const ORIGENS_FUNDO_BASE = ["Câmara Municipal de Lisboa", "Fundo paroquial", "Doação privada"];
 
 function estadoEfetivo(c: Cartao): string {
-  // O estado gravado só muda por ação humana — um cartão Ativo cuja validade
-  // já passou continua "Ativo" nos dados, mas mostra-se como Expirado.
-  if (c.estado === "Ativo" && diasAte(c.validade) < 0) return "Expirado";
+  // O estado gravado só muda por ação humana — um cartão Ativo, ou ainda por
+  // entregar, cuja validade já passou continua assim nos dados, mas
+  // mostra-se como Expirado (um cartão nunca entregue também perde a
+  // validade se ninguém o levantar a tempo).
+  if ((c.estado === "Ativo" || c.estado === "Por entregar") && diasAte(c.validade) < 0) return "Expirado";
   return c.estado;
 }
 
@@ -31,8 +34,17 @@ export function Cartoes() {
   const podeGerir = hasPerfil("Direção", "Administrativo");
   const [aberto, setAberto] = useState(false);
   const [aCancelar, setACancelar] = useState<Cartao | null>(null);
+  const [aEntregar, setAEntregar] = useState<Cartao | null>(null);
 
   const cartoes = [...db.cartoes].sort((a, b) => b.carregadoEm.localeCompare(a.carregadoEm));
+
+  const totais = {
+    ativos: cartoes.filter((c) => estadoEfetivo(c) === "Ativo").length,
+    // "Entregues" é um facto histórico — conta mesmo que o cartão tenha sido
+    // depois cancelado ou tenha entretanto expirado.
+    entregues: cartoes.filter((c) => c.entregueEm !== null).length,
+    porEntregar: cartoes.filter((c) => c.estado === "Por entregar").length,
+  };
 
   return (
     <div>
@@ -47,8 +59,15 @@ export function Cartoes() {
         }
       />
 
+      <div className="mb-5 grid grid-cols-3 gap-3">
+        <StatTile label="Ativos" value={totais.ativos} tone="pine" />
+        <StatTile label="Entregues" value={totais.entregues} />
+        <StatTile label="Por entregar" value={totais.porEntregar} tone="terracotta" />
+      </div>
+
       <Card title="Cartões emitidos">
         <DataTable
+          dense
           rowKey={(c) => c.id}
           rows={cartoes}
           columns={[
@@ -62,17 +81,31 @@ export function Cartoes() {
             },
             { header: "Valor", cell: (c) => formatCurrency(c.valor), align: "right" },
             { header: "Origem do fundo", cell: (c) => <span className="text-ink-soft">{c.origemFundo}</span> },
+            { header: "Emitido em", cell: (c) => <span className="text-ink-soft">{formatDate(c.carregadoEm)}</span> },
             {
               header: "Validade",
               cell: (c) => {
                 const dias = diasAte(c.validade);
-                const aproximaOuPassou = c.estado === "Ativo" && dias <= 7;
+                const aproximaOuPassou =
+                  (c.estado === "Ativo" && dias <= 7) || (c.estado === "Por entregar" && dias <= 14);
                 return (
                   <span className={aproximaOuPassou ? "font-medium text-terracotta-600" : ""}>
                     {formatDate(c.validade)}
                   </span>
                 );
               },
+            },
+            {
+              header: "Entregue em",
+              cell: (c) =>
+                c.entregueEm ? (
+                  <span className="text-ink-soft">
+                    {formatDate(c.entregueEm)}
+                    {c.recebidoPor && <span className="block text-xs">recebido por {c.recebidoPor}</span>}
+                  </span>
+                ) : (
+                  <span className="text-ink-soft">—</span>
+                ),
             },
             {
               header: "Prova de receção",
@@ -88,23 +121,16 @@ export function Cartoes() {
               cell: (c) =>
                 podeGerir && (c.estado === "Por entregar" || c.estado === "Ativo") ? (
                   <div className="flex justify-end gap-1.5">
-                    {c.estado === "Por entregar" && (
-                      <Button
-                        variant="secondary"
-                        onClick={() => {
-                          const proc = db.processos.find((p) => p.id === c.processoId);
-                          const pessoa = db.pessoas.find((p) => p.id === proc?.pessoaId);
-                          updateRecord("cartoes", c.id, {
-                            estado: "Ativo",
-                            entregueEm: new Date().toISOString().slice(0, 10),
-                            recebidoPor: pessoa?.nome ?? null,
-                            provaRececao: true,
-                          });
-                        }}
-                      >
-                        Confirmar entrega
-                      </Button>
-                    )}
+                    {c.estado === "Por entregar" &&
+                      (estadoEfetivo(c) === "Expirado" ? (
+                        <span className="text-xs text-ink-soft" title="A validade já passou sem o cartão ter sido entregue — cancele e emita um novo.">
+                          Expirou por entregar
+                        </span>
+                      ) : (
+                        <Button variant="secondary" onClick={() => setAEntregar(c)}>
+                          Confirmar entrega
+                        </Button>
+                      ))}
                     <Button variant="ghost" className="text-brick-600 hover:bg-brick-50" onClick={() => setACancelar(c)}>
                       Cancelar
                     </Button>
@@ -149,6 +175,58 @@ export function Cartoes() {
           }}
         />
       </Modal>
+
+      <Modal open={!!aEntregar} onClose={() => setAEntregar(null)} title="Confirmar entrega">
+        {aEntregar && (
+          <FormularioEntrega
+            cartao={aEntregar}
+            nomeBeneficiario={
+              db.pessoas.find(
+                (p) => p.id === db.processos.find((proc) => proc.id === aEntregar.processoId)?.pessoaId
+              )?.nome ?? ""
+            }
+            onConfirmar={(patch) => {
+              updateRecord("cartoes", aEntregar.id, { ...patch, estado: "Ativo", provaRececao: true });
+              setAEntregar(null);
+            }}
+          />
+        )}
+      </Modal>
+    </div>
+  );
+}
+
+function FormularioEntrega({
+  cartao,
+  nomeBeneficiario,
+  onConfirmar,
+}: {
+  cartao: Cartao;
+  nomeBeneficiario: string;
+  onConfirmar: (patch: { entregueEm: string; recebidoPor: string }) => void;
+}) {
+  const [recebidoPor, setRecebidoPor] = useState(nomeBeneficiario);
+  const [entregueEm, setEntregueEm] = useState(() => new Date().toISOString().slice(0, 10));
+
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-ink-soft">
+        Cartão <strong className="text-ink">{cartao.numero}</strong> ({formatCurrency(cartao.valor)}), para{" "}
+        {nomeBeneficiario || "beneficiário"}.
+      </p>
+      <Field label="Recebido por" hint="Normalmente o próprio beneficiário — mude se foi outra pessoa a levantar.">
+        <Input value={recebidoPor} onChange={(e) => setRecebidoPor(e.target.value)} />
+      </Field>
+      <Field label="Data de entrega">
+        <Input type="date" value={entregueEm} onChange={(e) => setEntregueEm(e.target.value)} />
+      </Field>
+      <Button
+        variant="primary"
+        disabled={!recebidoPor.trim()}
+        onClick={() => onConfirmar({ entregueEm, recebidoPor: recebidoPor.trim() })}
+      >
+        Confirmar entrega
+      </Button>
     </div>
   );
 }

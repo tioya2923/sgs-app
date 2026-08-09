@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useDb } from "../store/db";
-import { alertaVisivel, computeAlertas } from "../lib/alerts";
+import { alertaVisivel, compararPorGravidade, computeAlertas } from "../lib/alerts";
 import {
   Badge,
   Button,
@@ -10,6 +10,7 @@ import {
   Input,
   Modal,
   SectionHeading,
+  TabGroup,
   gravidadeTone,
 } from "../components/ui";
 import { formatDateTime } from "../lib/format";
@@ -24,7 +25,10 @@ export function Alertas() {
   const [motivo, setMotivo] = useState("");
 
   const alertas = useMemo(
-    () => computeAlertas(db).filter((a) => alertaVisivel(a, currentUser.perfil, db)),
+    () =>
+      computeAlertas(db)
+        .filter((a) => alertaVisivel(a, currentUser.perfil, db))
+        .sort(compararPorGravidade),
     [db, currentUser.perfil]
   );
   const visiveis = filtro === "Todos" ? alertas : alertas.filter((a) => a.estado === filtro);
@@ -49,20 +53,17 @@ export function Alertas() {
     <div>
       <SectionHeading title="Alertas automáticos" />
 
-
-      <div className="mb-5 flex gap-1 rounded-lg border border-pine-900/15 bg-paper-raised p-1">
-        {(["Ativo", "Adiado", "Tratado", "Todos"] as Filtro[]).map((f) => (
-          <button
-            key={f}
-            onClick={() => setFiltro(f)}
-            className={`rounded-md px-3.5 py-1.5 text-sm font-medium transition ${
-              filtro === f ? "bg-pine-800 text-pine-50" : "text-ink-soft hover:text-ink"
-            }`}
-          >
-            {f === "Ativo" ? `Ativos (${contagens.Ativo})` : f === "Tratado" ? `Tratados (${contagens.Tratado})` : f === "Adiado" ? `Adiados (${contagens.Adiado})` : "Todos"}
-          </button>
-        ))}
-      </div>
+      <TabGroup
+        className="mb-5"
+        value={filtro}
+        onChange={setFiltro}
+        options={[
+          { value: "Ativo", label: `Ativos (${contagens.Ativo})` },
+          { value: "Adiado", label: `Adiados (${contagens.Adiado})` },
+          { value: "Tratado", label: `Tratados (${contagens.Tratado})` },
+          { value: "Todos", label: "Todos" },
+        ]}
+      />
 
       <Card padded={false}>
         <div className="p-5">
@@ -73,7 +74,11 @@ export function Alertas() {
             columns={[
               { header: "Gravidade", cell: (a) => <Badge tone={gravidadeTone(a.gravidade)}>{a.gravidade}</Badge> },
               { header: "Tipo", cell: (a) => a.tipo },
-              { header: "Entidade", cell: (a) => <span className="text-ink-soft">{a.entidade}</span> },
+              {
+                header: "Entidade",
+                cell: (a) => <span className="text-ink-soft">{a.entidade}</span>,
+                className: "whitespace-normal",
+              },
               { header: "Gerado em", cell: (a) => formatDateTime(a.geradoEm) },
               {
                 header: "Estado",

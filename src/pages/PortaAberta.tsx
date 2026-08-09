@@ -11,6 +11,7 @@ import {
   SectionHeading,
   Select,
   SuggestInput,
+  TabGroup,
   Textarea,
   estadoTone,
 } from "../components/ui";
@@ -191,19 +192,14 @@ export function PortaAberta() {
       <SectionHeading title="Porta Aberta" />
 
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex gap-1 rounded-lg border border-pine-900/15 bg-paper-raised p-1">
-          {(vozLimitada ? (["agregados"] as Tab[]) : (["agregados", "processos"] as Tab[])).map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={`rounded-md px-3.5 py-1.5 text-sm font-medium transition ${
-                tabEfetivo === t ? "bg-pine-800 text-pine-50" : "text-ink-soft hover:text-ink"
-              }`}
-            >
-              {t === "agregados" ? "Agregados" : "Processos"}
-            </button>
-          ))}
-        </div>
+        <TabGroup
+          value={tabEfetivo}
+          onChange={setTab}
+          options={(vozLimitada ? (["agregados"] as Tab[]) : (["agregados", "processos"] as Tab[])).map((t) => ({
+            value: t,
+            label: t === "agregados" ? "Agregados" : "Processos",
+          }))}
+        />
         <div className="flex items-center gap-2">
           <Input
             placeholder={tabEfetivo === "agregados" ? "Procurar por código ou morada…" : "Procurar por nome…"}
@@ -230,7 +226,11 @@ export function PortaAberta() {
                 ...(vozLimitada
                   ? []
                   : [
-                      { header: "Morada", cell: (a: (typeof agregados)[number]) => a.morada },
+                      {
+                        header: "Morada",
+                        cell: (a: (typeof agregados)[number]) => a.morada,
+                        className: "whitespace-normal",
+                      },
                       { header: "Freguesia", cell: (a: (typeof agregados)[number]) => a.freguesia },
                     ]),
                 { header: "Pessoas", cell: (a) => a.numPessoas, align: "center" as const },
@@ -1151,7 +1151,11 @@ function ProcessoModal({
         columns={[
           { header: "Data", cell: (a) => formatDate(a.data) },
           { header: "Tipo", cell: (a) => a.tipo },
-          { header: "Motivo", cell: (a) => <span className="text-ink-soft">{a.motivo}</span> },
+          {
+            header: "Motivo",
+            cell: (a) => <span className="text-ink-soft">{a.motivo}</span>,
+            className: "whitespace-normal",
+          },
           { header: "Técnico", cell: (a) => a.tecnico },
         ]}
       />

@@ -13,6 +13,7 @@ import {
   SectionHeading,
   Select,
   SuggestInput,
+  TabGroup,
   estadoTone,
 } from "../components/ui";
 import { formatDate, diasAte } from "../lib/format";
@@ -42,26 +43,17 @@ export function BancoAlimentos() {
     <div>
       <SectionHeading title="Banco Solidário de Alimentos" />
 
-      <div className="mb-5 flex gap-1 rounded-lg border border-pine-900/15 bg-paper-raised p-1">
-        {(
-          [
-            ["montar", "Montar cabaz"],
-            ["historico", "Histórico"],
-            ["modelos", "Modelos de cabaz"],
-            ["entradas", "Entradas"],
-          ] as [Tab, string][]
-        ).map(([value, label]) => (
-          <button
-            key={value}
-            onClick={() => setTab(value)}
-            className={`rounded-md px-3.5 py-1.5 text-sm font-medium transition ${
-              tab === value ? "bg-pine-800 text-pine-50" : "text-ink-soft hover:text-ink"
-            }`}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      <TabGroup
+        className="mb-5"
+        value={tab}
+        onChange={setTab}
+        options={[
+          { value: "montar", label: "Montar cabaz" },
+          { value: "historico", label: "Histórico" },
+          { value: "modelos", label: "Modelos de cabaz" },
+          { value: "entradas", label: "Entradas" },
+        ]}
+      />
 
       {tab === "montar" && (
         <MontarCabaz
@@ -399,7 +391,7 @@ function MontarCabaz({
                         onClick={() => adicionarSugestao(artigo.id)}
                         className="rounded-full border border-terracotta-600/30 bg-terracotta-100 px-3 py-1 text-xs font-medium text-terracotta-700 hover:bg-terracotta-500 hover:text-white"
                       >
-                        + {artigo.nome} (vence a {formatDate(lote.validade)})
+                        + {artigo.nome} (caduca a {formatDate(lote.validade)})
                       </button>
                     ))}
                   </div>

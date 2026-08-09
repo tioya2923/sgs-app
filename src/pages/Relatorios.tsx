@@ -114,7 +114,7 @@ export function Relatorios() {
       <Card title="Exportação de dados individuais" className="mt-5">
         <label className="mb-3 flex items-center gap-2 text-sm text-ink-soft">
           <input type="checkbox" checked={anonimizar} onChange={(e) => setAnonimizar(e.target.checked)} />
-          Exportar sem nomes (recomendado — secção 6.3, Proteção de dados)
+          Exportar sem nomes (recomendado)
         </label>
         <Button
           variant="secondary"

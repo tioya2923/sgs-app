@@ -68,6 +68,38 @@ export function SectionHeading({
   );
 }
 
+// --- Grupo de separadores (abas) -----------------------------------------
+// Em ecrãs estreitos, sem isto cada botão espremia o próprio texto em duas
+// linhas (flexbox a encolher os filhos) em vez de deixar a barra deslizar
+// horizontalmente — o padrão mais comum e mais legível em mobile.
+export function TabGroup<T extends string>({
+  value,
+  onChange,
+  options,
+  className = "",
+}: {
+  value: T;
+  onChange: (value: T) => void;
+  options: { value: T; label: ReactNode }[];
+  className?: string;
+}) {
+  return (
+    <div className={`flex gap-1 overflow-x-auto rounded-lg border border-pine-900/15 bg-paper-raised p-1 ${className}`}>
+      {options.map((opt) => (
+        <button
+          key={opt.value}
+          onClick={() => onChange(opt.value)}
+          className={`shrink-0 whitespace-nowrap rounded-md px-3.5 py-1.5 text-sm font-medium transition ${
+            value === opt.value ? "bg-pine-800 text-pine-50" : "text-ink-soft hover:text-ink"
+          }`}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // --- Tabela genérica ---------------------------------------------------
 
 export interface DataTableColumn<T> {
@@ -93,15 +125,24 @@ export function DataTable<T>({
   if (rows.length === 0) {
     return <EmptyState message={emptyLabel} />;
   }
+  // "dense" existe para tabelas com muitas colunas (ex.: contagens diárias
+  // por turno) — letra e espaçamento um pouco menores encaixam mais colunas
+  // antes de precisar de deslizar horizontalmente, sem ficar ilegível.
+  const cellPadX = dense ? "px-2" : "px-3";
+  // As células não quebram linha por omissão — sem isto, nomes e outros
+  // textos curtos partiam-se a meio em ecrãs estreitos, deixando linhas com
+  // alturas diferentes (feio e difícil de ler). Colunas com texto
+  // genuinamente longo (moradas, descrições) pedem "whitespace-normal" no
+  // className da própria coluna para voltar a quebrar.
   return (
     <div className="-mx-5 overflow-x-auto px-5">
-      <table className="w-full min-w-[560px] border-collapse text-sm">
+      <table className={`w-full min-w-[480px] border-collapse ${dense ? "text-[13px]" : "text-sm"}`}>
         <thead>
           <tr className="border-b border-pine-900/15 text-left">
             {columns.map((col) => (
               <th
                 key={col.header}
-                className={`whitespace-nowrap px-3 py-2 font-mono text-[10.5px] font-medium uppercase tracking-[0.08em] text-ink-soft ${
+                className={`whitespace-nowrap ${cellPadX} py-2 font-mono text-[10.5px] font-medium uppercase tracking-[0.08em] text-ink-soft ${
                   col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : ""
                 } ${col.className ?? ""}`}
               >
@@ -119,7 +160,7 @@ export function DataTable<T>({
               {columns.map((col) => (
                 <td
                   key={col.header}
-                  className={`px-3 ${dense ? "py-1.5" : "py-2.5"} align-middle text-ink ${
+                  className={`${cellPadX} ${dense ? "py-1.5" : "py-2.5"} align-middle text-ink whitespace-nowrap ${
                     col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : ""
                   } ${col.className ?? ""}`}
                 >

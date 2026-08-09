@@ -16,19 +16,28 @@ import {
 } from "../components/ui";
 import { formatCurrency, formatDateTime } from "../lib/format";
 import { newId } from "../lib/id";
-import type { CanalMensagem, Mensagem } from "../types";
+import type { CanalMensagem, EstadoEntregaMensagem, Mensagem } from "../types";
 
 const MODELOS: Record<string, string> = {
   "Lembrete de levantamento de cabaz":
     "Centro Social São Nicolau: lembramos que o seu cabaz está disponível amanhã, das 10h às 12h.",
   "Cabaz por levantar":
     "Centro Social São Nicolau: o seu cabaz continua por levantar. Contacte-nos, por favor.",
-  "Cartão a caducar": "Centro Social São Nicolau: o seu cartão caduca dentro de dias. Contacte a secretaria.",
+  "Cartão a caducar":
+    "Centro Social São Nicolau: o seu cartão está prestes a caducar. Contacte a secretaria para renovar.",
   Aniversário: "Centro Social São Nicolau deseja-lhe um feliz aniversário!",
   "Aviso geral": "Centro Social São Nicolau: informamos uma alteração no horário de funcionamento.",
 };
 
 const PALAVRAS_SENSIVEIS = ["saúde", "doença", "doente", "dívida", "valor", "€", "diagnóstico", "internad"];
+
+// Não há nenhum agendador real (é tudo local, sem servidor) — uma mensagem
+// "Agendada" cuja hora já passou tem de se mostrar como Enviada, senão fica
+// para sempre "Agendada" mesmo muito depois de já dever ter saído.
+function estadoEfetivo(m: Mensagem): EstadoEntregaMensagem {
+  if (m.estadoEntrega === "Agendada" && m.agendada <= new Date().toISOString()) return "Enviada";
+  return m.estadoEntrega;
+}
 
 export function Mensagens() {
   const { db, currentUser, addRecord, removeRecord } = useDb();
@@ -37,6 +46,13 @@ export function Mensagens() {
 
   const mensagens = [...db.mensagens].sort((a, b) => b.agendada.localeCompare(a.agendada));
   const custoMes = mensagens.reduce((s, m) => s + (m.custo ?? 0), 0);
+
+  function telemovelDestinatario(m: Mensagem): string | null {
+    const proc = db.processos.find((p) => p.id === m.processoId);
+    const pessoa = proc ? db.pessoas.find((p) => p.id === proc.pessoaId) : null;
+    if (!pessoa) return null;
+    return db.contactos.find((c) => c.pessoaId === pessoa.id && c.tipo === "Telemóvel")?.valor ?? null;
+  }
 
   return (
     <div>
@@ -65,20 +81,34 @@ export function Mensagens() {
             { header: "Canal", cell: (m) => m.canal },
             { header: "Modelo", cell: (m) => <span className="text-ink-soft">{m.modelo}</span> },
             { header: "Agendada", cell: (m) => formatDateTime(m.agendada) },
-            { header: "Estado", cell: (m) => <Badge tone={estadoTone(m.estadoEntrega)}>{m.estadoEntrega}</Badge> },
+            { header: "Estado", cell: (m) => <Badge tone={estadoTone(estadoEfetivo(m))}>{estadoEfetivo(m)}</Badge> },
             {
               header: "",
               align: "right",
-              cell: (m) =>
-                m.estadoEntrega === "Falhou" ? (
-                  <span className="text-xs font-medium text-brick-600">☎ ligar à pessoa</span>
-                ) : m.estadoEntrega === "Sem consentimento" ? (
+              cell: (m) => {
+                if (estadoEfetivo(m) === "Falhou") {
+                  const numero = telemovelDestinatario(m);
+                  return numero ? (
+                    <a
+                      href={`tel:${numero.replace(/\s+/g, "")}`}
+                      className="text-xs font-medium text-brick-600 underline-offset-2 hover:underline"
+                    >
+                      ☎ ligar à pessoa ({numero})
+                    </a>
+                  ) : (
+                    <span className="text-xs font-medium text-brick-600" title="Sem telemóvel registado para esta pessoa.">
+                      ☎ ligar à pessoa — sem número
+                    </span>
+                  );
+                }
+                return estadoEfetivo(m) === "Sem consentimento" ? (
                   <span className="text-xs text-ink-soft">bloqueada — sem consentimento</span>
-                ) : m.estadoEntrega === "Agendada" ? (
+                ) : estadoEfetivo(m) === "Agendada" ? (
                   <Button variant="ghost" className="text-brick-600 hover:bg-brick-50" onClick={() => setACancelar(m)}>
                     Cancelar
                   </Button>
-                ) : null,
+                ) : null;
+              },
             },
           ]}
         />

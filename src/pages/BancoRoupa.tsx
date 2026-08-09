@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useDb } from "../store/db";
-import { Button, Callout, Card, DataTable, Field, Input, Modal, SectionHeading, Select, SuggestInput } from "../components/ui";
+import { Button, Callout, Card, DataTable, Field, Input, Modal, SectionHeading, Select, SuggestInput, TabGroup } from "../components/ui";
 import { formatDate } from "../lib/format";
 import { newId } from "../lib/id";
 import { sugestoesBenfeitores } from "../lib/sugestoes";
@@ -22,24 +22,15 @@ export function BancoRoupa() {
     <div>
       <SectionHeading title="Banco Solidário de Roupa" />
 
-      <div className="mb-5 flex gap-1 rounded-lg border border-pine-900/15 bg-paper-raised p-1">
-        {(
-          [
-            ["entregas", "Entregas por beneficiário"],
-            ["entradas", "Entradas"],
-          ] as [Tab, string][]
-        ).map(([value, label]) => (
-          <button
-            key={value}
-            onClick={() => setTab(value)}
-            className={`rounded-md px-3.5 py-1.5 text-sm font-medium transition ${
-              tab === value ? "bg-pine-800 text-pine-50" : "text-ink-soft hover:text-ink"
-            }`}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      <TabGroup
+        className="mb-5"
+        value={tab}
+        onChange={setTab}
+        options={[
+          { value: "entregas", label: "Entregas por beneficiário" },
+          { value: "entradas", label: "Entradas e saídas" },
+        ]}
+      />
 
       {tab === "entregas" && (
         <Entregas podeRegistar={podeRegistarEntrega} artigos={artigos} registadoPor={currentUser.nome} />
@@ -91,23 +82,45 @@ function Entregas({
       .reduce((soma, l) => soma + l.quantidade, 0);
   }
 
-  const itensInsuficientes = itens.filter((it) => it.quantidade > estoqueDisponivel(it.tipo));
+  // Duas linhas podem pedir o mesmo artigo (ex.: T-shirt tamanho M e tamanho
+  // L) — o que sobra para cada linha tem de descontar o que as outras linhas
+  // já reservaram, senão cada uma via o stock total como se fosse só sua.
+  function disponivelParaLinha(idx: number): number {
+    const item = itens[idx];
+    const jaPedidoPorOutrasLinhas = itens.reduce(
+      (soma, it, i) => (i !== idx && it.tipo === item.tipo ? soma + it.quantidade : soma),
+      0
+    );
+    return estoqueDisponivel(item.tipo) - jaPedidoPorOutrasLinhas;
+  }
+
+  const itensInsuficientes = itens.filter((it, idx) => it.quantidade > disponivelParaLinha(idx));
 
   function submeter() {
     if (itensInsuficientes.length > 0) return;
     const processo = db.processos.find((p) => p.id === processoId);
 
+    // Mapa de quantidades ainda por gastar em cada lote, atualizado à medida
+    // que cada linha da entrega consome — sem isto, duas linhas do mesmo
+    // artigo liam sempre a mesma quantidade "antes de gastar" e a segunda
+    // sobrescrevia o desconto da primeira em vez de somar a ela.
+    const restantePorLote = new Map(db.lotes.map((l) => [l.id, l.quantidade]));
+
     for (const item of itens) {
       const artigo = artigos.find((a) => a.nome === item.tipo);
       if (!artigo) continue;
       let restante = item.quantidade;
-      const lotesDisponiveis = db.lotes
-        .filter((l) => l.artigoId === artigo.id && l.estado === "disponível" && l.quantidade > 0)
+      const lotesDoArtigo = db.lotes
+        .filter((l) => l.artigoId === artigo.id && l.estado === "disponível")
         .sort((a, b) => a.entrada.localeCompare(b.entrada));
-      for (const lote of lotesDisponiveis) {
+      for (const lote of lotesDoArtigo) {
         if (restante <= 0) break;
-        const retirar = Math.min(restante, lote.quantidade);
-        updateRecord("lotes", lote.id, { quantidade: lote.quantidade - retirar });
+        const disponivelNoLote = restantePorLote.get(lote.id) ?? 0;
+        if (disponivelNoLote <= 0) continue;
+        const retirar = Math.min(restante, disponivelNoLote);
+        const novaQuantidade = disponivelNoLote - retirar;
+        restantePorLote.set(lote.id, novaQuantidade);
+        updateRecord("lotes", lote.id, { quantidade: novaQuantidade });
         addRecord("movimentos", {
           id: newId("mov"),
           artigoId: artigo.id,
@@ -169,6 +182,7 @@ function Entregas({
                   {e.artigos.map((a) => `${a.quantidade}× ${a.tipo}`).join(", ")}
                 </span>
               ),
+              className: "whitespace-normal",
             },
             { header: "Registado por", cell: (e) => e.registadoPor },
           ]}
@@ -189,7 +203,7 @@ function Entregas({
 
           <div className="space-y-2">
             {itens.map((item, idx) => {
-              const disponivel = estoqueDisponivel(item.tipo);
+              const disponivel = disponivelParaLinha(idx);
               const insuficiente = item.quantidade > disponivel;
               return (
                 <div key={idx} className="rounded-lg border border-pine-900/10 p-2">
@@ -276,11 +290,13 @@ function Entradas({
 
   const ehNovoArtigo = artigoId === NOVO_ARTIGO;
 
-  const movimentos = db.movimentos
-    .filter((m) => artigos.some((a) => a.id === m.artigoId) && m.tipo === "entrada")
+  const movimentosArmazem = db.movimentos
+    .filter((m) => artigos.some((a) => a.id === m.artigoId))
     .sort((a, b) => b.data.localeCompare(a.data));
+  const entradas = movimentosArmazem.filter((m) => m.tipo === "entrada");
+  const saidas = movimentosArmazem.filter((m) => m.tipo === "saída");
 
-  const sugestoesDoador = useMemo(() => sugestoesBenfeitores(movimentos), [movimentos]);
+  const sugestoesDoador = useMemo(() => sugestoesBenfeitores(entradas), [entradas]);
 
   function submeter() {
     let idArtigoFinal = artigoId;
@@ -333,27 +349,45 @@ function Entradas({
   }
 
   return (
-    <Card
-      title="Entradas no armazém"
-      subtitle={armazemDesignacao}
-      actions={
-        podeRegistar && (
-          <Button variant="primary" onClick={() => setAberto(true)}>
-            + Registar entrada
-          </Button>
-        )
-      }
-    >
-      <DataTable
-        rowKey={(m) => m.id}
-        rows={movimentos}
-        columns={[
-          { header: "Data", cell: (m) => formatDate(m.data) },
-          { header: "Artigo", cell: (m) => db.artigos.find((a) => a.id === m.artigoId)?.nome ?? "—" },
-          { header: "Quantidade", cell: (m) => m.quantidade, align: "right" },
-          { header: "Doador", cell: (m) => <span className="text-ink-soft">{m.benfeitor ?? "—"}</span> },
-        ]}
-      />
+    <>
+      <Card
+        title="Entradas"
+        subtitle={armazemDesignacao}
+        actions={
+          podeRegistar && (
+            <Button variant="primary" onClick={() => setAberto(true)}>
+              + Registar entrada
+            </Button>
+          )
+        }
+      >
+        <DataTable
+          rowKey={(m) => m.id}
+          rows={entradas}
+          emptyLabel="Sem entradas registadas."
+          columns={[
+            { header: "Data", cell: (m) => formatDate(m.data) },
+            { header: "Artigo", cell: (m) => db.artigos.find((a) => a.id === m.artigoId)?.nome ?? "—" },
+            { header: "Quantidade", cell: (m) => m.quantidade, align: "right" },
+            { header: "Doador", cell: (m) => <span className="text-ink-soft">{m.benfeitor ?? "—"}</span> },
+          ]}
+        />
+      </Card>
+
+      <Card title="Saídas" subtitle="Entregas a beneficiários" className="mt-5">
+        <DataTable
+          rowKey={(m) => m.id}
+          rows={saidas}
+          emptyLabel="Sem saídas registadas."
+          columns={[
+            { header: "Data", cell: (m) => formatDate(m.data) },
+            { header: "Artigo", cell: (m) => db.artigos.find((a) => a.id === m.artigoId)?.nome ?? "—" },
+            { header: "Quantidade", cell: (m) => m.quantidade, align: "right" },
+            { header: "Destino", cell: (m) => <span className="text-ink-soft">{m.origemOuDestino}</span> },
+            { header: "Registado por", cell: (m) => m.registadoPor },
+          ]}
+        />
+      </Card>
 
       <Modal open={aberto} onClose={() => setAberto(false)} title="Registar entrada">
         <div className="space-y-3">
@@ -403,6 +437,6 @@ function Entradas({
           </Button>
         </div>
       </Modal>
-    </Card>
+    </>
   );
 }
