@@ -10,6 +10,11 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
+      // Por omissão o plugin só ativa o manifest/service worker no build de
+      // produção — sem isto, testar o pedido de instalação com "npm run dev"
+      // nunca mostrava nada, porque o browser não tinha como considerar o
+      // site instalável.
+      devOptions: { enabled: true, type: 'module' },
       includeAssets: ['favicon.svg', 'icons.svg'],
       manifest: {
         id: '/sgs-app/',
