@@ -1,5 +1,6 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { DbProvider, useDb } from "./store/db";
+import { InstallPrompt } from "./components/InstallPrompt";
 import { Layout } from "./components/Layout";
 import { Login } from "./components/Login";
 import { NAV, podeAceder } from "./lib/nav";
@@ -128,6 +129,7 @@ export function App() {
     <DbProvider>
       <BrowserRouter basename="/sgs-app">
         <AuthGate />
+        <InstallPrompt />
       </BrowserRouter>
     </DbProvider>
   );
