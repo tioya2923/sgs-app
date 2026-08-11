@@ -379,17 +379,27 @@ function EntradasConsumiveis({
             onClick={() => {
               let idArtigoFinal = artigoId;
               if (ehNovoArtigo) {
-                if (!novoNome.trim()) return;
-                idArtigoFinal = newId("art");
-                addRecord("artigos", {
-                  id: idArtigoFinal,
-                  nome: novoNome.trim(),
-                  categoria: novaCategoria,
-                  unidade: novaUnidade,
-                  armazemId,
-                  stockMinimo: novoStockMinimo,
-                  consumivel: true,
-                });
+                const nomeNovo = novoNome.trim();
+                if (!nomeNovo) return;
+                // Um nome escrito de novo (espaço a mais, maiúscula diferente...)
+                // que já existe neste armazém não deve virar um segundo artigo —
+                // isso partia o stock em dois registos e desacertava os alertas
+                // de mínimo/esgotado.
+                const existente = artigos.find((a) => a.nome.trim().toLowerCase() === nomeNovo.toLowerCase());
+                if (existente) {
+                  idArtigoFinal = existente.id;
+                } else {
+                  idArtigoFinal = newId("art");
+                  addRecord("artigos", {
+                    id: idArtigoFinal,
+                    nome: nomeNovo,
+                    categoria: novaCategoria,
+                    unidade: novaUnidade,
+                    armazemId,
+                    stockMinimo: novoStockMinimo,
+                    consumivel: true,
+                  });
+                }
               }
 
               const loteId = newId("lot");

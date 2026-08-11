@@ -301,18 +301,27 @@ function Entradas({
   function submeter() {
     let idArtigoFinal = artigoId;
     if (ehNovoArtigo) {
-      if (!novoNome.trim()) return;
-      const novoArtigo: Artigo = {
-        id: newId("art"),
-        nome: novoNome.trim(),
-        categoria: novaCategoria,
-        unidade: "un",
-        armazemId,
-        stockMinimo: novoStockMinimo,
-        consumivel: false,
-      };
-      addRecord("artigos", novoArtigo);
-      idArtigoFinal = novoArtigo.id;
+      const nomeNovo = novoNome.trim();
+      if (!nomeNovo) return;
+      // Um nome escrito de novo (espaço a mais, maiúscula diferente...) que já
+      // existe neste armazém não deve virar um segundo artigo — isso partia o
+      // stock em dois registos e desacertava os alertas de mínimo/esgotado.
+      const existente = artigos.find((a) => a.nome.trim().toLowerCase() === nomeNovo.toLowerCase());
+      if (existente) {
+        idArtigoFinal = existente.id;
+      } else {
+        const novoArtigo: Artigo = {
+          id: newId("art"),
+          nome: nomeNovo,
+          categoria: novaCategoria,
+          unidade: "un",
+          armazemId,
+          stockMinimo: novoStockMinimo,
+          consumivel: false,
+        };
+        addRecord("artigos", novoArtigo);
+        idArtigoFinal = novoArtigo.id;
+      }
     }
 
     const lote: Lote = {
