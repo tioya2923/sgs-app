@@ -1,0 +1,383 @@
+// Esquema de dados do SGS — Centro Social Paroquial de São Nicolau.
+//
+// Espelha src/types.ts do frontend. Convenções:
+//   - datas "de calendário" (AAAA-MM-DD) são `String` com CHECK na migração;
+//   - instantes (login, auditoria, mensagens, alertas) são `DateTime` (timestamptz);
+//   - valores de uniões de strings (Perfil, EstadoProcesso…) são `String`,
+//     validados com Zod na API;
+//   - dados históricos (cabazes, cartões, refeições, mensagens) sobrevivem à
+//     eliminação do processo: as FKs passam a NULL (onDelete: SetNull).
+
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ------------------------------------------------------------- Utilizadores
+
+model Utilizador {
+  id                 String         @id @default(uuid(7)) @db.Uuid
+  nome               String
+  perfil             String
+  email              String         @unique
+  passwordHash       String         @map("password_hash")
+  ativo              Boolean        @default(true)
+  ultimoAcesso       DateTime?      @map("ultimo_acesso") @db.Timestamptz
+  mustChangePassword Boolean        @default(false) @map("must_change_password")
+  failedLogins       Int            @default(0) @map("failed_logins")
+  lockedUntil        DateTime?      @map("locked_until") @db.Timestamptz
+  createdAt          DateTime       @default(now()) @map("created_at") @db.Timestamptz
+  refreshTokens      RefreshToken[]
+
+  @@map("utilizadores")
+}
+
+model RefreshToken {
+  id           String     @id @default(uuid(7)) @db.Uuid
+  utilizadorId String     @map("utilizador_id") @db.Uuid
+  utilizador   Utilizador @relation(fields: [utilizadorId], references: [id], onDelete: Cascade)
+  tokenHash    String     @unique @map("token_hash")
+  expiresAt    DateTime   @map("expires_at") @db.Timestamptz
+  revokedAt    DateTime?  @map("revoked_at") @db.Timestamptz
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([utilizadorId])
+  @@map("refresh_tokens")
+}
+
+model RegistoAcesso {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  utilizador String
+  acao       String
+  entidade   String
+  dataHora   DateTime @default(now()) @map("data_hora") @db.Timestamptz
+
+  @@index([dataHora])
+  @@map("registos_acesso")
+}
+
+// ------------------------------------------------------------ Porta Aberta
+
+model Agregado {
+  id                   String         @id @default(uuid(7)) @db.Uuid
+  codigo               String         @unique
+  morada               String
+  freguesia            String
+  situacaoHabitacional String         @map("situacao_habitacional")
+  rendimentoTotal      Decimal        @default(0) @map("rendimento_total") @db.Decimal(10, 2)
+  numPessoas           Int            @default(0) @map("num_pessoas")
+  numMenores           Int            @default(0) @map("num_menores")
+  dataAbertura         String         @map("data_abertura")
+  pessoas              Pessoa[]
+  entregasCabaz        EntregaCabaz[]
+  cartoes              Cartao[]
+
+  @@map("agregados")
+}
+
+model Pessoa {
+  id                    String     @id @default(uuid(7)) @db.Uuid
+  agregadoId            String     @map("agregado_id") @db.Uuid
+  agregado              Agregado   @relation(fields: [agregadoId], references: [id], onDelete: Cascade)
+  nome                  String
+  dataNascimento        String     @map("data_nascimento")
+  nacionalidade         String
+  estadoCivil           String     @map("estado_civil")
+  nif                   String     @default("")
+  documentoTipo         String     @map("documento_tipo")
+  documentoNumero       String     @default("") @map("documento_numero")
+  documentoValidade     String?    @map("documento_validade")
+  parentesco            String
+  restricoesAlimentares String[]   @default([]) @map("restricoes_alimentares")
+  incapacidade          Boolean    @default(false)
+  temProcessoProprio    Boolean    @default(false) @map("tem_processo_proprio")
+  processos             Processo[]
+  contactos             Contacto[]
+
+  @@index([agregadoId])
+  @@map("pessoas")
+}
+
+model Processo {
+  id                       String             @id @default(uuid(7)) @db.Uuid
+  numero                   Int                @unique
+  pessoaId                 String             @map("pessoa_id") @db.Uuid
+  pessoa                   Pessoa             @relation(fields: [pessoaId], references: [id], onDelete: Cascade)
+  tecnicaReferencia        String             @map("tecnica_referencia")
+  dataAbertura             String             @map("data_abertura")
+  estado                   String
+  periodicidadeReavaliacao String             @map("periodicidade_reavaliacao")
+  proximaAvaliacao         String             @map("proxima_avaliacao")
+  documentos               Documento[]
+  inscricoes               Inscricao[]
+  atendimentos             Atendimento[]
+  entregasCabaz            EntregaCabaz[]
+  entregasRoupa            EntregaRoupa[]
+  refeicoesPresenca        RefeicaoPresenca[]
+  cartoes                  Cartao[]
+  mensagens                Mensagem[]
+
+  @@index([pessoaId])
+  @@map("processos")
+}
+
+model Contacto {
+  id                String  @id @default(uuid(7)) @db.Uuid
+  pessoaId          String  @map("pessoa_id") @db.Uuid
+  pessoa            Pessoa  @relation(fields: [pessoaId], references: [id], onDelete: Cascade)
+  tipo              String
+  valor             String
+  consentimento     Boolean
+  dataConsentimento String? @map("data_consentimento")
+  preferencial      Boolean @default(false)
+
+  @@index([pessoaId])
+  @@map("contactos")
+}
+
+model Documento {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  processoId String   @map("processo_id") @db.Uuid
+  processo   Processo @relation(fields: [processoId], references: [id], onDelete: Cascade)
+  tipo       String
+  ficheiro   String
+  data       String
+  validade   String?
+
+  @@index([processoId])
+  @@map("documentos")
+}
+
+model Inscricao {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  processoId  String   @map("processo_id") @db.Uuid
+  processo    Processo @relation(fields: [processoId], references: [id], onDelete: Cascade)
+  programa    String
+  data        String
+  estado      String
+  motivo      String   @default("")
+  observacoes String   @default("")
+
+  @@index([processoId])
+  @@map("inscricoes")
+}
+
+model Atendimento {
+  id                    String   @id @default(uuid(7)) @db.Uuid
+  processoId            String   @map("processo_id") @db.Uuid
+  processo              Processo @relation(fields: [processoId], references: [id], onDelete: Cascade)
+  data                  String
+  tipo                  String
+  motivo                String
+  observacoes           String   @default("")
+  necessidadesDetetadas String[] @default([]) @map("necessidades_detetadas")
+  encaminhamento        String   @default("")
+  proximaAvaliacao      String?  @map("proxima_avaliacao")
+  tecnico               String
+
+  @@index([processoId])
+  @@map("atendimentos")
+}
+
+// -------------------------------------------------------------- Existências
+
+model Armazem {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  codigo     String   @unique
+  designacao String
+  artigos    Artigo[]
+
+  @@map("armazens")
+}
+
+model Artigo {
+  id          String      @id @default(uuid(7)) @db.Uuid
+  nome        String
+  categoria   String
+  unidade     String
+  armazemId   String      @map("armazem_id") @db.Uuid
+  armazem     Armazem     @relation(fields: [armazemId], references: [id], onDelete: Restrict)
+  stockMinimo Int         @default(0) @map("stock_minimo")
+  consumivel  Boolean     @default(true)
+  lotes       Lote[]
+  movimentos  Movimento[]
+
+  @@index([armazemId])
+  @@map("artigos")
+}
+
+model Lote {
+  id                String      @id @default(uuid(7)) @db.Uuid
+  artigoId          String      @map("artigo_id") @db.Uuid
+  artigo            Artigo      @relation(fields: [artigoId], references: [id], onDelete: Restrict)
+  quantidade        Int
+  validade          String?
+  localizacaoFisica String      @map("localizacao_fisica")
+  estado            String
+  entrada           String
+  movimentos        Movimento[]
+
+  @@index([artigoId])
+  @@map("lotes")
+}
+
+model Movimento {
+  id              String   @id @default(uuid(7)) @db.Uuid
+  artigoId        String   @map("artigo_id") @db.Uuid
+  artigo          Artigo   @relation(fields: [artigoId], references: [id], onDelete: Restrict)
+  loteId          String?  @map("lote_id") @db.Uuid
+  lote            Lote?    @relation(fields: [loteId], references: [id], onDelete: SetNull)
+  tipo            String
+  quantidade      Int
+  data            String
+  origemOuDestino String   @map("origem_ou_destino")
+  fornecedor      String?
+  benfeitor       String?
+  documento       String?
+  preco           Decimal? @db.Decimal(10, 2)
+  registadoPor    String   @map("registado_por")
+  referencia      String?
+  criadoEm        DateTime @default(now()) @map("criado_em") @db.Timestamptz
+
+  @@index([artigoId])
+  @@index([data])
+  @@map("movimentos")
+}
+
+// ------------------------------------------------------------- Distribuição
+
+model ModeloCabaz {
+  id        String  @id @default(uuid(7)) @db.Uuid
+  nome      String
+  tipologia String
+  versao    Int     @default(1)
+  ativo     Boolean @default(true)
+  // [{ artigoId, quantidade }]
+  linhas    Json    @default("[]")
+
+  @@map("modelos_cabaz")
+}
+
+model EntregaCabaz {
+  id           String    @id @default(uuid(7)) @db.Uuid
+  agregadoId   String?   @map("agregado_id") @db.Uuid
+  agregado     Agregado? @relation(fields: [agregadoId], references: [id], onDelete: SetNull)
+  processoId   String?   @map("processo_id") @db.Uuid
+  processo     Processo? @relation(fields: [processoId], references: [id], onDelete: SetNull)
+  tipo         String
+  modeloId     String?   @map("modelo_id") @db.Uuid
+  modeloVersao Int       @map("modelo_versao")
+  dataPrevista String    @map("data_prevista")
+  dataEfetiva  String?   @map("data_efetiva")
+  levantadoPor String?   @map("levantado_por")
+  registadoPor String    @map("registado_por")
+  estado       String
+  observacoes  String    @default("")
+  linhas       Json      @default("[]")
+
+  @@index([agregadoId])
+  @@index([dataPrevista])
+  @@map("entregas_cabaz")
+}
+
+model EntregaRoupa {
+  id           String    @id @default(uuid(7)) @db.Uuid
+  processoId   String?   @map("processo_id") @db.Uuid
+  processo     Processo? @relation(fields: [processoId], references: [id], onDelete: SetNull)
+  data         String
+  // [{ tipo, tamanho, quantidade, estado }]
+  artigos      Json      @default("[]")
+  registadoPor String    @map("registado_por")
+
+  @@map("entregas_roupa")
+}
+
+model RefeicaoContagem {
+  id         String @id @default(uuid(7)) @db.Uuid
+  data       String
+  turno      String
+  numPessoas Int    @map("num_pessoas")
+  sopas      Int
+  pratos     Int
+  sobremesas Int
+  pao        Int
+  aguas      Int
+
+  @@unique([data, turno])
+  @@map("refeicoes_contagem")
+}
+
+model RefeicaoPresenca {
+  id         String    @id @default(uuid(7)) @db.Uuid
+  data       String
+  turno      String
+  processoId String?   @map("processo_id") @db.Uuid
+  processo   Processo? @relation(fields: [processoId], references: [id], onDelete: SetNull)
+  modalidade String
+  numDoses   Int       @default(1) @map("num_doses")
+
+  @@unique([data, turno, processoId])
+  @@map("refeicoes_presenca")
+}
+
+model Cartao {
+  id           String    @id @default(uuid(7)) @db.Uuid
+  numero       String    @unique
+  agregadoId   String?   @map("agregado_id") @db.Uuid
+  agregado     Agregado? @relation(fields: [agregadoId], references: [id], onDelete: SetNull)
+  processoId   String?   @map("processo_id") @db.Uuid
+  processo     Processo? @relation(fields: [processoId], references: [id], onDelete: SetNull)
+  valor        Decimal   @db.Decimal(10, 2)
+  origemFundo  String    @map("origem_fundo")
+  carregadoEm  String    @map("carregado_em")
+  validade     String
+  entregueEm   String?   @map("entregue_em")
+  recebidoPor  String?   @map("recebido_por")
+  provaRececao Boolean   @default(false) @map("prova_rececao")
+  emitidoPor   String    @map("emitido_por")
+  estado       String
+
+  @@map("cartoes")
+}
+
+// ------------------------------------------------------ Alertas e mensagens
+
+// O id é a chave determinística do alerta (ex.: "validade-curta:<loteId>"):
+// só se guarda o estado humano (tratado/adiado) — o resto é recalculado.
+model Alerta {
+  id              String   @id
+  tipo            String
+  gravidade       String
+  entidade        String
+  entidadeTipo    String   @map("entidade_tipo")
+  entidadeId      String?  @map("entidade_id")
+  geradoEm        DateTime @default(now()) @map("gerado_em") @db.Timestamptz
+  estado          String
+  motivoAdiamento String?  @map("motivo_adiamento")
+  tratadoPor      String?  @map("tratado_por")
+
+  @@map("alertas")
+}
+
+model Mensagem {
+  id            String    @id @default(uuid(7)) @db.Uuid
+  processoId    String?   @map("processo_id") @db.Uuid
+  processo      Processo? @relation(fields: [processoId], references: [id], onDelete: SetNull)
+  canal         String
+  modelo        String
+  conteudoFinal String    @map("conteudo_final")
+  agendada      DateTime  @db.Timestamptz
+  enviada       DateTime? @db.Timestamptz
+  estadoEntrega String    @map("estado_entrega")
+  resposta      String?
+  custo         Decimal?  @db.Decimal(6, 2)
+
+  @@index([agendada])
+  @@map("mensagens")
+}
