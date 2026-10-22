@@ -154,7 +154,7 @@ export async function authRoutes(app: FastifyInstance) {
   });
 
   // --------------------------------------------------------------------- me
-  r.get("/me", { preHandler: app.authenticate }, async (request) => {
+  r.get("/me", { onRequest: app.authenticate }, async (request) => {
     const u = await prisma.utilizador.findUniqueOrThrow({ where: { id: request.auth.id } });
     return { utilizador: dtoUtilizador(u) };
   });
@@ -163,7 +163,7 @@ export async function authRoutes(app: FastifyInstance) {
   r.post(
     "/change-password",
     {
-      preHandler: app.authenticate,
+      onRequest: app.authenticate,
       config: { rateLimit: { max: config.LOGIN_RATE_MAX, timeWindow: "1 minute" } },
       schema: { body: z.object({ atual: z.string().min(1).max(200), nova: politicaPassword }) },
     },

@@ -14,6 +14,15 @@ import { Prisma, type PrismaClient } from "./db.js";
 import { AppError } from "./lib/errors.js";
 import { authPlugin } from "./plugins/auth.js";
 import { authRoutes } from "./modules/auth/routes.js";
+import { bootstrapRoutes } from "./modules/bootstrap.js";
+import { alertasRoutes } from "./modules/alertas.js";
+import { cartoesRoutes } from "./modules/cartoes.js";
+import { casosRoutes } from "./modules/casos.js";
+import { mensagensRoutes } from "./modules/mensagens.js";
+import { relatoriosRoutes } from "./modules/relatorios.js";
+import { utilizadoresRoutes } from "./modules/utilizadores.js";
+import { distribuicaoRoutes } from "./modules/distribuicao.js";
+import { existenciasRoutes } from "./modules/existencias.js";
 
 declare module "fastify" {
   interface FastifyInstance {
@@ -84,6 +93,15 @@ export async function buildApp(config: Config, prisma: PrismaClient): Promise<Fa
   await app.register(
     async (api) => {
       await api.register(authRoutes, { prefix: "/auth" });
+      await api.register(bootstrapRoutes);
+      await api.register(casosRoutes);
+      await api.register(existenciasRoutes);
+      await api.register(distribuicaoRoutes);
+      await api.register(cartoesRoutes);
+      await api.register(mensagensRoutes);
+      await api.register(utilizadoresRoutes);
+      await api.register(alertasRoutes);
+      await api.register(relatoriosRoutes);
     },
     { prefix: "/api/v1" },
   );
