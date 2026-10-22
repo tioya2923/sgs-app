@@ -1,12 +1,7 @@
 import { useMemo, useState } from "react";
 import { useDb } from "../store/db";
 import { Button, Card, DataTable, SectionHeading, StatTile } from "../components/ui";
-import { formatCurrency } from "../lib/format";
-
-function inicioMesISO() {
-  const d = new Date();
-  return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10);
-}
+import { formatCurrency, inicioMesISO } from "../lib/format";
 
 function baixarCsv(nomeFicheiro: string, linhas: string[][]) {
   const conteudo = linhas.map((linha) => linha.map((v) => `"${v.replace(/"/g, '""')}"`).join(";")).join("\n");

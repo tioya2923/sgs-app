@@ -16,7 +16,7 @@ import {
   TabGroup,
   estadoTone,
 } from "../components/ui";
-import { formatDate, diasAte } from "../lib/format";
+import { formatDate, diasAte, hojeISO } from "../lib/format";
 import { newId } from "../lib/id";
 import { UNIDADES } from "../lib/unidades";
 import { sugestoesBenfeitores } from "../lib/sugestoes";
@@ -207,7 +207,7 @@ function MontarCabaz({
             loteId: lote.id,
             tipo: "saída",
             quantidade: retirar,
-            data: new Date().toISOString().slice(0, 10),
+            data: hojeISO(),
             origemOuDestino: `Cabaz — Agregado ${agregado.codigo}`,
             fornecedor: null,
             benfeitor: null,
@@ -229,8 +229,8 @@ function MontarCabaz({
         tipo: "Semanal",
         modeloId: modelo.id,
         modeloVersao: modelo.versao,
-        dataPrevista: new Date().toISOString().slice(0, 10),
-        dataEfetiva: new Date().toISOString().slice(0, 10),
+        dataPrevista: hojeISO(),
+        dataEfetiva: hojeISO(),
         levantadoPor: db.pessoas.find((p) => p.agregadoId === agregado.id)?.nome ?? null,
         registadoPor,
         estado: "Entregue",
@@ -675,17 +675,26 @@ function Entradas({
     let idArtigoFinal = artigoId;
 
     if (ehNovoArtigo) {
-      if (!novoNome.trim()) return;
-      novoArtigo = {
-        id: newId("art"),
-        nome: novoNome.trim(),
-        categoria: novaCategoria,
-        unidade: novaUnidade,
-        armazemId,
-        stockMinimo: novoStockMinimo,
-        consumivel: true,
-      };
-      idArtigoFinal = novoArtigo.id;
+      const nomeNovo = novoNome.trim();
+      if (!nomeNovo) return;
+      // Um nome escrito de novo (espaço a mais, maiúscula diferente...) que já
+      // existe neste armazém não deve virar um segundo artigo — isso partia o
+      // stock em dois registos e desacertava os alertas de mínimo/esgotado.
+      const existente = artigosArmazem.find((a) => a.nome.trim().toLowerCase() === nomeNovo.toLowerCase());
+      if (existente) {
+        idArtigoFinal = existente.id;
+      } else {
+        novoArtigo = {
+          id: newId("art"),
+          nome: nomeNovo,
+          categoria: novaCategoria,
+          unidade: novaUnidade,
+          armazemId,
+          stockMinimo: novoStockMinimo,
+          consumivel: true,
+        };
+        idArtigoFinal = novoArtigo.id;
+      }
     }
 
     const lote: Lote = {
@@ -695,7 +704,7 @@ function Entradas({
       validade: validade || null,
       localizacaoFisica: "Prateleira A",
       estado: "disponível",
-      entrada: new Date().toISOString().slice(0, 10),
+      entrada: hojeISO(),
     };
     onRegistar(
       lote,

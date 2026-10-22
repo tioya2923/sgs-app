@@ -14,7 +14,7 @@ import {
   TabGroup,
   tipoMovimentoTone,
 } from "../components/ui";
-import { formatDate } from "../lib/format";
+import { formatDate, hojeISO } from "../lib/format";
 import { newId } from "../lib/id";
 import { UNIDADES } from "../lib/unidades";
 import type { RefeicaoContagem, RefeicaoPresenca, Turno } from "../types";
@@ -81,7 +81,7 @@ function Contagem({
 
   const contagens = [...db.refeicoesContagem].sort((a, b) => b.data.localeCompare(a.data));
 
-  const hoje = new Date().toISOString().slice(0, 10);
+  const hoje = hojeISO();
   // Uma contagem é por dia + turno — registar duas vezes o mesmo turno no
   // mesmo dia duplicava os números em vez de os corrigir (para corrigir um
   // valor já registado, isso faz-se editando, não acrescentando outra linha).
@@ -187,7 +187,7 @@ function Presencas({
   onMarcar: (p: RefeicaoPresenca) => void;
 }) {
   const { db } = useDb();
-  const hoje = new Date().toISOString().slice(0, 10);
+  const hoje = hojeISO();
   const [data, setData] = useState(hoje);
   const [turno, setTurno] = useState<Turno>("Almoço");
 
@@ -379,17 +379,27 @@ function EntradasConsumiveis({
             onClick={() => {
               let idArtigoFinal = artigoId;
               if (ehNovoArtigo) {
-                if (!novoNome.trim()) return;
-                idArtigoFinal = newId("art");
-                addRecord("artigos", {
-                  id: idArtigoFinal,
-                  nome: novoNome.trim(),
-                  categoria: novaCategoria,
-                  unidade: novaUnidade,
-                  armazemId,
-                  stockMinimo: novoStockMinimo,
-                  consumivel: true,
-                });
+                const nomeNovo = novoNome.trim();
+                if (!nomeNovo) return;
+                // Um nome escrito de novo (espaço a mais, maiúscula diferente...)
+                // que já existe neste armazém não deve virar um segundo artigo —
+                // isso partia o stock em dois registos e desacertava os alertas
+                // de mínimo/esgotado.
+                const existente = artigos.find((a) => a.nome.trim().toLowerCase() === nomeNovo.toLowerCase());
+                if (existente) {
+                  idArtigoFinal = existente.id;
+                } else {
+                  idArtigoFinal = newId("art");
+                  addRecord("artigos", {
+                    id: idArtigoFinal,
+                    nome: nomeNovo,
+                    categoria: novaCategoria,
+                    unidade: novaUnidade,
+                    armazemId,
+                    stockMinimo: novoStockMinimo,
+                    consumivel: true,
+                  });
+                }
               }
 
               const loteId = newId("lot");
@@ -400,7 +410,7 @@ function EntradasConsumiveis({
                 validade: null,
                 localizacaoFisica: "Copa",
                 estado: "disponível",
-                entrada: new Date().toISOString().slice(0, 10),
+                entrada: hojeISO(),
               });
               addRecord("movimentos", {
                 id: newId("mov"),
@@ -408,7 +418,7 @@ function EntradasConsumiveis({
                 loteId,
                 tipo: "entrada",
                 quantidade,
-                data: new Date().toISOString().slice(0, 10),
+                data: hojeISO(),
                 origemOuDestino: armazemDesignacao,
                 fornecedor: null,
                 benfeitor: null,

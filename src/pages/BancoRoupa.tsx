@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useDb } from "../store/db";
 import { Button, Callout, Card, DataTable, Field, Input, Modal, SectionHeading, Select, SuggestInput, TabGroup } from "../components/ui";
-import { formatDate } from "../lib/format";
+import { formatDate, hojeISO } from "../lib/format";
 import { newId } from "../lib/id";
 import { sugestoesBenfeitores } from "../lib/sugestoes";
 import type { Artigo, ItemRoupa, Lote, Movimento } from "../types";
@@ -127,7 +127,7 @@ function Entregas({
           loteId: lote.id,
           tipo: "saída",
           quantidade: retirar,
-          data: new Date().toISOString().slice(0, 10),
+          data: hojeISO(),
           origemOuDestino: `Entrega de roupa — processo nº ${processo?.numero ?? "—"}`,
           fornecedor: null,
           benfeitor: null,
@@ -143,7 +143,7 @@ function Entregas({
     addRecord("entregasRoupa", {
       id: newId("erp"),
       processoId,
-      data: new Date().toISOString().slice(0, 10),
+      data: hojeISO(),
       artigos: itens,
       registadoPor,
     });
@@ -301,18 +301,27 @@ function Entradas({
   function submeter() {
     let idArtigoFinal = artigoId;
     if (ehNovoArtigo) {
-      if (!novoNome.trim()) return;
-      const novoArtigo: Artigo = {
-        id: newId("art"),
-        nome: novoNome.trim(),
-        categoria: novaCategoria,
-        unidade: "un",
-        armazemId,
-        stockMinimo: novoStockMinimo,
-        consumivel: false,
-      };
-      addRecord("artigos", novoArtigo);
-      idArtigoFinal = novoArtigo.id;
+      const nomeNovo = novoNome.trim();
+      if (!nomeNovo) return;
+      // Um nome escrito de novo (espaço a mais, maiúscula diferente...) que já
+      // existe neste armazém não deve virar um segundo artigo — isso partia o
+      // stock em dois registos e desacertava os alertas de mínimo/esgotado.
+      const existente = artigos.find((a) => a.nome.trim().toLowerCase() === nomeNovo.toLowerCase());
+      if (existente) {
+        idArtigoFinal = existente.id;
+      } else {
+        const novoArtigo: Artigo = {
+          id: newId("art"),
+          nome: nomeNovo,
+          categoria: novaCategoria,
+          unidade: "un",
+          armazemId,
+          stockMinimo: novoStockMinimo,
+          consumivel: false,
+        };
+        addRecord("artigos", novoArtigo);
+        idArtigoFinal = novoArtigo.id;
+      }
     }
 
     const lote: Lote = {
@@ -322,7 +331,7 @@ function Entradas({
       validade: null,
       localizacaoFisica: "Arrecadação",
       estado: "disponível",
-      entrada: new Date().toISOString().slice(0, 10),
+      entrada: hojeISO(),
     };
     addRecord("lotes", lote);
     addRecord("movimentos", {

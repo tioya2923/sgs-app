@@ -14,7 +14,7 @@ import {
   SuggestInput,
   estadoTone,
 } from "../components/ui";
-import { diasAte, formatCurrency, formatDate } from "../lib/format";
+import { dataISO, diasAte, formatCurrency, formatDate, hojeISO } from "../lib/format";
 import { newId } from "../lib/id";
 import type { Cartao } from "../types";
 
@@ -206,7 +206,7 @@ function FormularioEntrega({
   onConfirmar: (patch: { entregueEm: string; recebidoPor: string }) => void;
 }) {
   const [recebidoPor, setRecebidoPor] = useState(nomeBeneficiario);
-  const [entregueEm, setEntregueEm] = useState(() => new Date().toISOString().slice(0, 10));
+  const [entregueEm, setEntregueEm] = useState(() => hojeISO());
 
   return (
     <div className="space-y-3">
@@ -262,7 +262,7 @@ function FormularioCartao({
   const [validade, setValidade] = useState(() => {
     const d = new Date();
     d.setMonth(d.getMonth() + 3);
-    return d.toISOString().slice(0, 10);
+    return dataISO(d);
   });
 
   return (
@@ -300,7 +300,7 @@ function FormularioCartao({
             processoId,
             valor,
             origemFundo,
-            carregadoEm: new Date().toISOString().slice(0, 10),
+            carregadoEm: hojeISO(),
             validade,
             entregueEm: null,
             recebidoPor: null,

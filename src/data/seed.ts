@@ -21,6 +21,7 @@ import type {
   RegistoAcesso,
   Utilizador,
 } from "../types";
+import { dataISO } from "../lib/format";
 
 let counter = 0;
 function id(prefix: string): string {
@@ -28,9 +29,10 @@ function id(prefix: string): string {
   return `${prefix}-${counter.toString().padStart(4, "0")}`;
 }
 
-const DAY = 24 * 60 * 60 * 1000;
 function iso(offsetDays: number, from: Date = new Date()): string {
-  return new Date(from.getTime() + offsetDays * DAY).toISOString().slice(0, 10);
+  const d = new Date(from);
+  d.setDate(d.getDate() + offsetDays);
+  return dataISO(d);
 }
 
 export function buildSeed(): Database {

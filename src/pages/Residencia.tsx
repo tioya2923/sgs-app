@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useDb } from "../store/db";
 import { Button, Callout, Card, DataTable, Field, Input, Modal, SectionHeading, Select } from "../components/ui";
-import { formatDate } from "../lib/format";
+import { formatDate, hojeISO } from "../lib/format";
 import { newId } from "../lib/id";
 import { UNIDADES } from "../lib/unidades";
 import type { Artigo, Lote, Movimento } from "../types";
@@ -41,18 +41,27 @@ export function Residencia() {
   function registarEntrada() {
     let idArtigoFinal = artigoId;
     if (ehNovoArtigo) {
-      if (!novoNome.trim()) return;
-      const novoArtigo: Artigo = {
-        id: newId("art"),
-        nome: novoNome.trim(),
-        categoria: novaCategoria,
-        unidade: novaUnidade,
-        armazemId: armazem.id,
-        stockMinimo: novoStockMinimo,
-        consumivel: true,
-      };
-      addRecord("artigos", novoArtigo);
-      idArtigoFinal = novoArtigo.id;
+      const nomeNovo = novoNome.trim();
+      if (!nomeNovo) return;
+      // Um nome escrito de novo (espaço a mais, maiúscula diferente...) que já
+      // existe neste armazém não deve virar um segundo artigo — isso partia o
+      // stock em dois registos e desacertava os alertas de mínimo/esgotado.
+      const existente = artigos.find((a) => a.nome.trim().toLowerCase() === nomeNovo.toLowerCase());
+      if (existente) {
+        idArtigoFinal = existente.id;
+      } else {
+        const novoArtigo: Artigo = {
+          id: newId("art"),
+          nome: nomeNovo,
+          categoria: novaCategoria,
+          unidade: novaUnidade,
+          armazemId: armazem.id,
+          stockMinimo: novoStockMinimo,
+          consumivel: true,
+        };
+        addRecord("artigos", novoArtigo);
+        idArtigoFinal = novoArtigo.id;
+      }
     }
 
     const lote: Lote = {
@@ -62,7 +71,7 @@ export function Residencia() {
       validade: validade || null,
       localizacaoFisica: "Arca / prateleira",
       estado: "disponível",
-      entrada: new Date().toISOString().slice(0, 10),
+      entrada: hojeISO(),
     };
     addRecord("lotes", lote);
     addRecord("movimentos", {
@@ -103,7 +112,7 @@ export function Residencia() {
         loteId: lote.id,
         tipo: "saída",
         quantidade: retirar,
-        data: new Date().toISOString().slice(0, 10),
+        data: hojeISO(),
         origemOuDestino: "Casa da Caridade — cozinha",
         fornecedor: null,
         benfeitor: null,
