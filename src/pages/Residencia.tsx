@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useDb } from "../store/db";
 import { Button, Callout, Card, DataTable, Field, Input, Modal, SectionHeading, Select } from "../components/ui";
-import { formatDate } from "../lib/format";
+import { formatDate, hojeISO } from "../lib/format";
 import { newId } from "../lib/id";
 import { UNIDADES } from "../lib/unidades";
 import type { Artigo, Lote, Movimento } from "../types";
@@ -71,7 +71,7 @@ export function Residencia() {
       validade: validade || null,
       localizacaoFisica: "Arca / prateleira",
       estado: "disponível",
-      entrada: new Date().toISOString().slice(0, 10),
+      entrada: hojeISO(),
     };
     addRecord("lotes", lote);
     addRecord("movimentos", {
@@ -112,7 +112,7 @@ export function Residencia() {
         loteId: lote.id,
         tipo: "saída",
         quantidade: retirar,
-        data: new Date().toISOString().slice(0, 10),
+        data: hojeISO(),
         origemOuDestino: "Casa da Caridade — cozinha",
         fornecedor: null,
         benfeitor: null,

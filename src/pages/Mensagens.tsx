@@ -14,7 +14,7 @@ import {
   Textarea,
   estadoTone,
 } from "../components/ui";
-import { formatCurrency, formatDateTime } from "../lib/format";
+import { agoraLocalISO, formatCurrency, formatDateTime } from "../lib/format";
 import { newId } from "../lib/id";
 import type { CanalMensagem, EstadoEntregaMensagem, Mensagem } from "../types";
 
@@ -35,7 +35,7 @@ const PALAVRAS_SENSIVEIS = ["saúde", "doença", "doente", "dívida", "valor", "
 // "Agendada" cuja hora já passou tem de se mostrar como Enviada, senão fica
 // para sempre "Agendada" mesmo muito depois de já dever ter saído.
 function estadoEfetivo(m: Mensagem): EstadoEntregaMensagem {
-  if (m.estadoEntrega === "Agendada" && m.agendada <= new Date().toISOString()) return "Enviada";
+  if (m.estadoEntrega === "Agendada" && m.agendada <= agoraLocalISO()) return "Enviada";
   return m.estadoEntrega;
 }
 
@@ -195,7 +195,7 @@ function NovaMensagem({
     const d = new Date();
     d.setDate(d.getDate() + 1);
     d.setHours(9, 0, 0, 0);
-    return d.toISOString().slice(0, 16);
+    return agoraLocalISO(d);
   });
 
   const pessoa = useMemo(() => {
@@ -236,7 +236,7 @@ function NovaMensagem({
   const podeEnviar = modo === "um" ? !semConsentimento : elegiveisTodos.length > 0;
 
   function construirMensagem(procId: string): Mensagem {
-    const agora = new Date().toISOString();
+    const agora = agoraLocalISO();
     return {
       id: newId("msg"),
       processoId: procId,

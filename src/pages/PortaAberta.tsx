@@ -15,7 +15,7 @@ import {
   Textarea,
   estadoTone,
 } from "../components/ui";
-import { formatDate, idade } from "../lib/format";
+import { dataISO, formatDate, hojeISO, idade } from "../lib/format";
 import { newId } from "../lib/id";
 import type {
   Agregado,
@@ -78,7 +78,7 @@ function calcularProximaAvaliacao(periodicidade: Periodicidade): string {
   const meses = periodicidade === "Mensal" ? 1 : periodicidade === "Trimestral" ? 3 : 6;
   const d = new Date();
   d.setMonth(d.getMonth() + meses);
-  return d.toISOString().slice(0, 10);
+  return dataISO(d);
 }
 
 /**
@@ -464,7 +464,7 @@ export function PortaAberta() {
               numero: proximoNumeroProcesso(db),
               pessoaId: pessoaAberta.id,
               tecnicaReferencia,
-              dataAbertura: new Date().toISOString().slice(0, 10),
+              dataAbertura: hojeISO(),
               estado: "Ativo",
               periodicidadeReavaliacao: periodicidade,
               proximaAvaliacao: calcularProximaAvaliacao(periodicidade),
@@ -604,7 +604,7 @@ function NovoAgregadoForm({
 
   function submeter() {
     if (!podeCriar) return;
-    const hoje = new Date().toISOString().slice(0, 10);
+    const hoje = hojeISO();
     const agregadoId = newId("agr");
     const pessoaId = newId("pes");
 
@@ -850,7 +850,7 @@ function AdicionarPessoaForm({
 
   function submeter() {
     if (!podeAdicionar) return;
-    const hoje = new Date().toISOString().slice(0, 10);
+    const hoje = hojeISO();
     const pessoaId = newId("pes");
 
     const pessoa: Pessoa = {
@@ -1105,7 +1105,7 @@ function ProcessoModal({
           onSubmit={(e) => {
             e.preventDefault();
             onRegistarAtendimento({
-              data: new Date().toISOString().slice(0, 10),
+              data: hojeISO(),
               tipo,
               motivo,
               observacoes,
@@ -1508,7 +1508,7 @@ function AdicionarContactoForm({
             valor: valor.trim(),
             preferencial,
             consentimento,
-            dataConsentimento: consentimento ? new Date().toISOString().slice(0, 10) : null,
+            dataConsentimento: consentimento ? hojeISO() : null,
           })
         }
       >

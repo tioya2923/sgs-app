@@ -2,6 +2,31 @@ const dateFmt = new Intl.DateTimeFormat("pt-PT", { day: "2-digit", month: "2-dig
 const dateLongFmt = new Intl.DateTimeFormat("pt-PT", { day: "2-digit", month: "long", year: "numeric" });
 const currencyFmt = new Intl.NumberFormat("pt-PT", { style: "currency", currency: "EUR" });
 
+const dois = (n: number) => String(n).padStart(2, "0");
+
+/**
+ * Data local no formato AAAA-MM-DD. toISOString() devolve UTC, e em Lisboa
+ * (UTC+1 no verão) isso fazia "hoje" ser ainda ontem entre as 00:00 e as 01:00
+ * e o dia 1 de cada mês aparecer como o último dia do mês anterior.
+ */
+export function dataISO(d: Date = new Date()): string {
+  return `${d.getFullYear()}-${dois(d.getMonth() + 1)}-${dois(d.getDate())}`;
+}
+
+export function hojeISO(): string {
+  return dataISO();
+}
+
+export function inicioMesISO(): string {
+  const d = new Date();
+  return dataISO(new Date(d.getFullYear(), d.getMonth(), 1));
+}
+
+/** Data e hora locais (minuto) no formato AAAA-MM-DDTHH:mm — o que um input datetime-local espera. */
+export function agoraLocalISO(d: Date = new Date()): string {
+  return `${dataISO(d)}T${dois(d.getHours())}:${dois(d.getMinutes())}`;
+}
+
 export function formatDate(iso: string | null | undefined): string {
   if (!iso) return "—";
   const [datePart] = iso.split("T");

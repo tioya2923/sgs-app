@@ -4,16 +4,7 @@ import { useDb } from "../store/db";
 import { alertaVisivel, compararPorGravidade, computeAlertas } from "../lib/alerts";
 import { moduloVisivel, podeAceder } from "../lib/nav";
 import { Badge, Card, DataTable, SectionHeading, StatTile, gravidadeTone } from "../components/ui";
-import { formatDate, formatDateLong } from "../lib/format";
-
-function hojeISO() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function inicioMesISO() {
-  const d = new Date();
-  return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10);
-}
+import { formatDate, formatDateLong, hojeISO, inicioMesISO } from "../lib/format";
 
 function saudacao(): string {
   const hora = new Date().getHours();

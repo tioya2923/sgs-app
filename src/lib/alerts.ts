@@ -1,5 +1,5 @@
 import type { ArmazemCodigo, Alerta, Database, Gravidade, Perfil, TipoAlerta } from "../types";
-import { formatDate } from "./format";
+import { agoraLocalISO, dataISO, formatDate } from "./format";
 
 // Um alerta só deve ser visível a quem tem, de facto, capacidade de o
 // resolver — não basta "ver", tem de poder agir. Por isso cada tipo aponta
@@ -191,7 +191,7 @@ export function computeAlertas(db: Database): Alerta[] {
     if (inscricao.estado !== "Ativa") continue;
     const fim = new Date(inscricao.data + "T00:00:00");
     fim.setFullYear(fim.getFullYear() + 1);
-    const dias = diasAte(fim.toISOString().slice(0, 10), hoje);
+    const dias = diasAte(dataISO(fim), hoje);
     if (dias <= 30) {
       const processo = db.processos.find((p) => p.id === inscricao.processoId);
       const pessoa = processo ? db.pessoas.find((p) => p.id === processo.pessoaId) : undefined;
@@ -318,7 +318,7 @@ export function computeAlertas(db: Database): Alerta[] {
       entidade: g.entidade,
       entidadeTipo: g.entidadeTipo,
       entidadeId: g.entidadeId,
-      geradoEm: anterior?.geradoEm ?? new Date().toISOString(),
+      geradoEm: anterior?.geradoEm ?? agoraLocalISO(),
       estado: anterior?.estado ?? "Ativo",
       motivoAdiamento: anterior?.motivoAdiamento ?? null,
       tratadoPor: anterior?.tratadoPor ?? null,

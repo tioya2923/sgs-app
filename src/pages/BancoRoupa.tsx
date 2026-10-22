@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useDb } from "../store/db";
 import { Button, Callout, Card, DataTable, Field, Input, Modal, SectionHeading, Select, SuggestInput, TabGroup } from "../components/ui";
-import { formatDate } from "../lib/format";
+import { formatDate, hojeISO } from "../lib/format";
 import { newId } from "../lib/id";
 import { sugestoesBenfeitores } from "../lib/sugestoes";
 import type { Artigo, ItemRoupa, Lote, Movimento } from "../types";
@@ -127,7 +127,7 @@ function Entregas({
           loteId: lote.id,
           tipo: "saída",
           quantidade: retirar,
-          data: new Date().toISOString().slice(0, 10),
+          data: hojeISO(),
           origemOuDestino: `Entrega de roupa — processo nº ${processo?.numero ?? "—"}`,
           fornecedor: null,
           benfeitor: null,
@@ -143,7 +143,7 @@ function Entregas({
     addRecord("entregasRoupa", {
       id: newId("erp"),
       processoId,
-      data: new Date().toISOString().slice(0, 10),
+      data: hojeISO(),
       artigos: itens,
       registadoPor,
     });
@@ -331,7 +331,7 @@ function Entradas({
       validade: null,
       localizacaoFisica: "Arrecadação",
       estado: "disponível",
-      entrada: new Date().toISOString().slice(0, 10),
+      entrada: hojeISO(),
     };
     addRecord("lotes", lote);
     addRecord("movimentos", {

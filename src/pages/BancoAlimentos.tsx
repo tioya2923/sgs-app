@@ -16,7 +16,7 @@ import {
   TabGroup,
   estadoTone,
 } from "../components/ui";
-import { formatDate, diasAte } from "../lib/format";
+import { formatDate, diasAte, hojeISO } from "../lib/format";
 import { newId } from "../lib/id";
 import { UNIDADES } from "../lib/unidades";
 import { sugestoesBenfeitores } from "../lib/sugestoes";
@@ -207,7 +207,7 @@ function MontarCabaz({
             loteId: lote.id,
             tipo: "saída",
             quantidade: retirar,
-            data: new Date().toISOString().slice(0, 10),
+            data: hojeISO(),
             origemOuDestino: `Cabaz — Agregado ${agregado.codigo}`,
             fornecedor: null,
             benfeitor: null,
@@ -229,8 +229,8 @@ function MontarCabaz({
         tipo: "Semanal",
         modeloId: modelo.id,
         modeloVersao: modelo.versao,
-        dataPrevista: new Date().toISOString().slice(0, 10),
-        dataEfetiva: new Date().toISOString().slice(0, 10),
+        dataPrevista: hojeISO(),
+        dataEfetiva: hojeISO(),
         levantadoPor: db.pessoas.find((p) => p.agregadoId === agregado.id)?.nome ?? null,
         registadoPor,
         estado: "Entregue",
@@ -704,7 +704,7 @@ function Entradas({
       validade: validade || null,
       localizacaoFisica: "Prateleira A",
       estado: "disponível",
-      entrada: new Date().toISOString().slice(0, 10),
+      entrada: hojeISO(),
     };
     onRegistar(
       lote,

@@ -14,7 +14,7 @@ import {
   TabGroup,
   tipoMovimentoTone,
 } from "../components/ui";
-import { formatDate } from "../lib/format";
+import { formatDate, hojeISO } from "../lib/format";
 import { newId } from "../lib/id";
 import { UNIDADES } from "../lib/unidades";
 import type { RefeicaoContagem, RefeicaoPresenca, Turno } from "../types";
@@ -81,7 +81,7 @@ function Contagem({
 
   const contagens = [...db.refeicoesContagem].sort((a, b) => b.data.localeCompare(a.data));
 
-  const hoje = new Date().toISOString().slice(0, 10);
+  const hoje = hojeISO();
   // Uma contagem é por dia + turno — registar duas vezes o mesmo turno no
   // mesmo dia duplicava os números em vez de os corrigir (para corrigir um
   // valor já registado, isso faz-se editando, não acrescentando outra linha).
@@ -187,7 +187,7 @@ function Presencas({
   onMarcar: (p: RefeicaoPresenca) => void;
 }) {
   const { db } = useDb();
-  const hoje = new Date().toISOString().slice(0, 10);
+  const hoje = hojeISO();
   const [data, setData] = useState(hoje);
   const [turno, setTurno] = useState<Turno>("Almoço");
 
@@ -410,7 +410,7 @@ function EntradasConsumiveis({
                 validade: null,
                 localizacaoFisica: "Copa",
                 estado: "disponível",
-                entrada: new Date().toISOString().slice(0, 10),
+                entrada: hojeISO(),
               });
               addRecord("movimentos", {
                 id: newId("mov"),
@@ -418,7 +418,7 @@ function EntradasConsumiveis({
                 loteId,
                 tipo: "entrada",
                 quantidade,
-                data: new Date().toISOString().slice(0, 10),
+                data: hojeISO(),
                 origemOuDestino: armazemDesignacao,
                 fornecedor: null,
                 benfeitor: null,

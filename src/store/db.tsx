@@ -9,6 +9,7 @@ import {
 } from "react";
 import type { Database, Perfil, Utilizador } from "../types";
 import { buildSeed } from "../data/seed";
+import { hojeISO } from "../lib/format";
 
 const STORAGE_VERSION = 2;
 const STORAGE_KEY = `sgs-sao-nicolau:db:v${STORAGE_VERSION}`;
@@ -141,7 +142,7 @@ export function DbProvider({ children }: { children: ReactNode }) {
       if (!encontrado) return false;
       setSession(encontrado.id);
       updateRecord("utilizadores", encontrado.id, {
-        ultimoAcesso: new Date().toISOString().slice(0, 10),
+        ultimoAcesso: hojeISO(),
       });
       return true;
     },

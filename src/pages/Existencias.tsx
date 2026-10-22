@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useDb } from "../store/db";
 import { Badge, Button, Card, DataTable, Field, Input, Modal, SectionHeading, Select, StatTile } from "../components/ui";
+import { hojeISO } from "../lib/format";
 import { newId } from "../lib/id";
 import type { Artigo } from "../types";
 
@@ -177,7 +178,7 @@ function TransferirModal({
       validade: null,
       localizacaoFisica: "Transferido",
       estado: "disponível" as const,
-      entrada: new Date().toISOString().slice(0, 10),
+      entrada: hojeISO(),
     };
 
     onTransferir({
@@ -190,7 +191,7 @@ function TransferirModal({
         loteId: null,
         tipo: "transferência",
         quantidade: transferido,
-        data: new Date().toISOString().slice(0, 10),
+        data: hojeISO(),
         origemOuDestino: `${armazemOrigem.designacao} → ${armazemDestino.designacao}`,
         fornecedor: null,
         benfeitor: null,
