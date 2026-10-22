@@ -31,6 +31,9 @@ jobs:
 
       - name: Build
         run: npm run build
+        env:
+          # Endereço público da API (Settings → Variables → Actions → VITE_API_URL)
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4

@@ -43,7 +43,7 @@ describe("autenticação", () => {
     expect((await post("/login", { email: EMAILS.cozinha, password: PASSWORD })).statusCode).toBe(200);
   });
 
-  it("rotaciona o refresh token e fecha todas as sessões se um token usado reaparecer", async () => {
+  it("rotaciona o refresh token; reutilização logo a seguir é tolerada, mais tarde fecha todas as sessões", async () => {
     const login = await post("/login", { email: EMAILS.armazem, password: PASSWORD });
     const r1 = refreshDe(login);
     const refresh = await post("/refresh", undefined, { sgs_refresh: r1 });
@@ -51,10 +51,16 @@ describe("autenticação", () => {
     const r2 = refreshDe(refresh);
     expect(r2).not.toBe(r1);
 
+    // dois separadores a renovar quase ao mesmo tempo: não é roubo
+    const concorrente = await post("/refresh", undefined, { sgs_refresh: r1 });
+    expect(concorrente.statusCode).toBe(200);
+
+    // passada a janela de tolerância, o token já gasto é tratado como roubado
+    await ctx.prisma.refreshToken.updateMany({ where: { revokedAt: { not: null } }, data: { revokedAt: new Date(Date.now() - 60_000), rotatedAt: new Date(Date.now() - 60_000) } });
     const reuso = await post("/refresh", undefined, { sgs_refresh: r1 });
     expect(reuso.statusCode).toBe(401);
-    // o token novo também foi revogado
     expect((await post("/refresh", undefined, { sgs_refresh: r2 })).statusCode).toBe(401);
+    expect((await post("/refresh", undefined, { sgs_refresh: refreshDe(concorrente) })).statusCode).toBe(401);
   });
 
   it("logout revoga o refresh token", async () => {

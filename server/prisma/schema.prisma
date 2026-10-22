@@ -45,6 +45,9 @@ model RefreshToken {
   tokenHash    String     @unique @map("token_hash")
   expiresAt    DateTime   @map("expires_at") @db.Timestamptz
   revokedAt    DateTime?  @map("revoked_at") @db.Timestamptz
+  // Preenchido só quando o token foi substituído por rotação (renovação normal). Logout e
+  // mudança de palavra-passe revogam sem rotatedAt: esses tokens nunca são tolerados.
+  rotatedAt    DateTime?  @map("rotated_at") @db.Timestamptz
   createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz
 
   @@index([utilizadorId])

@@ -8,6 +8,10 @@ import { registarAcesso } from "../../lib/audit.js";
 
 export const COOKIE_REFRESH = "sgs_refresh";
 const MIN_PASSWORD = 10;
+// Dois pedidos de renovação quase simultâneos (dois separadores a abrir, um reload a meio) usam o mesmo
+// refresh token: o segundo não é roubo. Dentro desta janela aceita-se; depois disso, reutilizar um token
+// já gasto fecha todas as sessões da conta.
+const TOLERANCIA_REUTILIZACAO_MS = 20_000;
 
 const hashToken = (token: string) => createHash("sha256").update(token).digest("hex");
 
@@ -101,6 +105,10 @@ export async function authRoutes(app: FastifyInstance) {
         data: { failedLogins: 0, lockedUntil: null, ultimoAcesso: new Date() },
       });
       await registarAcesso(prisma, u.nome, "Login", u.email);
+      // Limpeza: tokens expirados, ou revogados há mais de 30 dias, não servem para nada.
+      await prisma.refreshToken.deleteMany({
+        where: { utilizadorId: u.id, OR: [{ expiresAt: { lt: new Date() } }, { revokedAt: { lt: new Date(Date.now() - 30 * 24 * 3600_000) } }] },
+      });
       await emitirRefresh(u.id, reply);
       return { accessToken: assinarAcesso(u.id), utilizador: dtoUtilizador(atualizado) };
     },
@@ -117,8 +125,11 @@ export async function authRoutes(app: FastifyInstance) {
     });
     if (!registo) throw new AppError(401, "Sessão inválida", "nao_autenticado");
 
-    // Um token já usado a voltar a aparecer indica roubo: fecham-se todas as sessões da conta.
-    if (registo.revokedAt) {
+    // Um token já usado a voltar a aparecer (fora da janela de tolerância) indica roubo: fecham-se todas as sessões da conta.
+    const jaUsado = Boolean(registo.revokedAt);
+    // Só um token substituído por rotação há instantes é tolerado; revogado por logout/mudança de password, nunca.
+    const rotacaoRecente = registo.rotatedAt !== null && Date.now() - registo.rotatedAt.getTime() <= TOLERANCIA_REUTILIZACAO_MS;
+    if (jaUsado && !rotacaoRecente) {
       await prisma.refreshToken.updateMany({
         where: { utilizadorId: registo.utilizadorId, revokedAt: null },
         data: { revokedAt: new Date() },
@@ -131,7 +142,7 @@ export async function authRoutes(app: FastifyInstance) {
       throw new AppError(401, "Sessão expirada", "nao_autenticado");
     }
 
-    await prisma.refreshToken.update({ where: { id: registo.id }, data: { revokedAt: new Date() } });
+    if (!jaUsado) await prisma.refreshToken.update({ where: { id: registo.id }, data: { revokedAt: new Date(), rotatedAt: new Date() } });
     await emitirRefresh(registo.utilizadorId, reply);
     return { accessToken: assinarAcesso(registo.utilizadorId), utilizador: dtoUtilizador(registo.utilizador) };
   });

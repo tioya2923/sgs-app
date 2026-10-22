@@ -41,6 +41,8 @@ interface DbContextValue {
    */
   executar: <T>(operacao: () => Promise<T>) => Promise<T | undefined>;
   recarregar: () => Promise<void>;
+  /** Falha ao carregar os dados (servidor em baixo, sem rede…); só relevante enquanto `carregado` for false. */
+  erroCarregar: string | null;
   erro: string | null;
   limparErro: () => void;
 }
@@ -176,10 +178,11 @@ function DbProviderInterno({ children }: { children: ReactNode }) {
       hasPerfil,
       executar,
       recarregar,
+      erroCarregar: bootstrap.isError ? (bootstrap.error instanceof ApiError ? bootstrap.error.message : "Não foi possível carregar os dados.") : null,
       erro,
       limparErro: () => setErro(null),
     }),
-    [bootstrap.data, currentUser, utilizador?.id, estado, precisaTrocarPassword, login, logout, trocarPassword, hasPerfil, executar, recarregar, erro],
+    [bootstrap.data, bootstrap.isError, bootstrap.error, currentUser, utilizador?.id, estado, precisaTrocarPassword, login, logout, trocarPassword, hasPerfil, executar, recarregar, erro],
   );
 
   return <DbContext.Provider value={value}>{children}</DbContext.Provider>;

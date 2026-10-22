@@ -1,4 +1,5 @@
 import Fastify, { type FastifyInstance } from "fastify";
+import { z } from "zod";
 import helmet from "@fastify/helmet";
 import cors from "@fastify/cors";
 import cookie from "@fastify/cookie";
@@ -23,6 +24,9 @@ import { relatoriosRoutes } from "./modules/relatorios.js";
 import { utilizadoresRoutes } from "./modules/utilizadores.js";
 import { distribuicaoRoutes } from "./modules/distribuicao.js";
 import { existenciasRoutes } from "./modules/existencias.js";
+
+// Mensagens de validação em português (as que escrevemos à mão já o estão).
+z.config(z.locales.pt());
 
 declare module "fastify" {
   interface FastifyInstance {
@@ -58,16 +62,20 @@ export async function buildApp(config: Config, prisma: PrismaClient): Promise<Fa
   });
   await app.register(cookie);
   await app.register(jwt, { secret: config.JWT_SECRET });
-  await app.register(rateLimit, { global: true, max: 300, timeWindow: "1 minute" });
+  await app.register(rateLimit, {
+    global: true,
+    max: 300,
+    timeWindow: "1 minute",
+    errorResponseBuilder: (_req, ctx) =>
+      Object.assign(new Error(`Demasiados pedidos. Tente de novo dentro de ${Math.ceil(ctx.ttl / 1000)} segundos.`), { statusCode: 429 }),
+  });
   await app.register(authPlugin);
 
   app.setErrorHandler((error, request, reply) => {
     if (hasZodFastifySchemaValidationErrors(error)) {
-      return reply.code(400).send({
-        erro: "validacao",
-        mensagem: "Dados inválidos",
-        detalhes: error.validation.map((v) => ({ campo: v.instancePath, mensagem: v.message })),
-      });
+      const detalhes = error.validation.map((v) => ({ campo: v.instancePath.replace(/^\//, "").replace(/\//g, "."), mensagem: v.message }));
+      const resumo = detalhes.slice(0, 3).map((d) => (d.campo ? `${d.campo}: ${d.mensagem}` : d.mensagem)).join("; ");
+      return reply.code(400).send({ erro: "validacao", mensagem: `Dados inválidos — ${resumo}`, detalhes });
     }
     if (error instanceof AppError) {
       return reply.code(error.status).send({ erro: error.code, mensagem: error.message });

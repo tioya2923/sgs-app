@@ -29,6 +29,9 @@ export function agoraLocalISO(d: Date = new Date()): string {
 
 export function formatDate(iso: string | null | undefined): string {
   if (!iso) return "—";
+  // Um instante do servidor (com Z ou desvio horário) passa para a data local antes de se formatar.
+  const instante = /(Z|[+-]\d{2}:\d{2})$/.test(iso) && iso.includes("T") ? new Date(iso) : null;
+  if (instante && !Number.isNaN(instante.getTime())) return dateFmt.format(instante);
   const [datePart] = iso.split("T");
   const d = new Date(datePart + "T00:00:00");
   if (Number.isNaN(d.getTime())) return "—";
