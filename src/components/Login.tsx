@@ -3,27 +3,21 @@ import { useDb } from "../store/db";
 import { Button, Field, Input, PasswordInput } from "./ui";
 
 export function Login() {
-  const { login, resetDb } = useDb();
+  const { login } = useDb();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [erro, setErro] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  const [aEntrar, setAEntrar] = useState(false);
 
-  function resetLocalState() {
-    resetDb();
-    setEmail("");
-    setPassword("");
-    setErro(false);
-  }
-
-  function submeter(e: FormEvent) {
+  async function submeter(e: FormEvent) {
     e.preventDefault();
-    const ok = login(email, password);
-    if (!ok) {
-      setErro(true);
+    setAEntrar(true);
+    const resultado = await login(email, password);
+    setAEntrar(false);
+    if (resultado) {
+      setErro(resultado);
       setPassword("");
-      return;
     }
-    setErro(false);
   }
 
   return (
@@ -58,23 +52,14 @@ export function Login() {
           </Field>
 
           {erro && (
-            <p className="rounded-lg bg-brick-50 px-3 py-2 text-sm text-brick-700">
-              Email ou palavra-passe incorretos.
+            <p role="alert" className="rounded-lg bg-brick-50 px-3 py-2 text-sm text-brick-700">
+              {erro}
             </p>
           )}
 
-          <div className="space-y-3">
-            <Button type="submit" variant="primary" className="w-full justify-center">
-              Entrar
-            </Button>
-            <button
-              type="button"
-              className="w-full text-sm font-medium text-ink-soft underline underline-offset-4 transition hover:text-ink"
-              onClick={resetLocalState}
-            >
-              Reiniciar dados locais
-            </button>
-          </div>
+          <Button type="submit" variant="primary" className="w-full justify-center" disabled={aEntrar}>
+            {aEntrar ? "A entrar…" : "Entrar"}
+          </Button>
         </form>
 
         <p className="mt-6 text-center text-xs text-ink-soft">

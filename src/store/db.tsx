@@ -7,169 +7,194 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Database, Perfil, Utilizador } from "../types";
-import { buildSeed } from "../data/seed";
-import { hojeISO } from "../lib/format";
+import { ApiError, api, aoSessaoExpirar, auth, definirToken, renovarSessao, type UtilizadorApi } from "../services/api";
 
-const STORAGE_VERSION = 2;
-const STORAGE_KEY = `sgs-sao-nicolau:db:v${STORAGE_VERSION}`;
-const LEGACY_STORAGE_KEY = "sgs-sao-nicolau:db:v1";
-const SESSION_KEY = `sgs-sao-nicolau:sessao:v${STORAGE_VERSION}`;
-const LEGACY_SESSION_KEY = "sgs-sao-nicolau:sessao";
+const BASE_VAZIA: Database = {
+  agregados: [], pessoas: [], processos: [], contactos: [], documentos: [], inscricoes: [], atendimentos: [],
+  armazens: [], artigos: [], lotes: [], movimentos: [], modelosCabaz: [], entregasCabaz: [], entregasRoupa: [],
+  refeicoesContagem: [], refeicoesPresenca: [], cartoes: [], alertas: [], mensagens: [], registosAcesso: [],
+  utilizadores: [],
+};
 
-function loadDb(): Database {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    const legacyRaw = raw ?? localStorage.getItem(LEGACY_STORAGE_KEY);
-
-    if (legacyRaw && !raw) {
-      // O estado legado vinha de uma versão antiga da app.
-      // Forçar reset do seed garante que as alterações de utilizador e credenciais são aplicadas.
-      localStorage.removeItem(LEGACY_STORAGE_KEY);
-      localStorage.removeItem(LEGACY_SESSION_KEY);
-      const seeded = buildSeed();
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(seeded));
-      return seeded;
-    }
-
-    if (raw) {
-      const parsed = JSON.parse(raw) as Database;
-      // Migração: instalações anteriores a este ecrã de login não tinham palavra-passe.
-      // Sem isto, ninguém conseguiria voltar a entrar depois de já ter usado o sistema.
-      if (parsed.utilizadores?.some((u) => !u.password)) {
-        const fresh = buildSeed();
-        parsed.utilizadores = parsed.utilizadores.map((u) => {
-          if (u.password) return u;
-          const correspondente = fresh.utilizadores.find((f) => f.email === u.email);
-          return { ...u, password: correspondente?.password ?? "muda-me" };
-        });
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
-      }
-      return parsed;
-    }
-  } catch {
-    // localStorage corrompido ou indisponível — recomeça com dados de exemplo
-  }
-  const seeded = buildSeed();
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(seeded));
-  return seeded;
-}
-
-type WithId = { id: string };
+type Estado = "a-carregar" | "anonimo" | "autenticado";
 
 interface DbContextValue {
+  /** Dados que o perfil atual pode ver, já filtrados pelo servidor. */
   db: Database;
-  addRecord: <K extends keyof Database>(key: K, record: Database[K][number] & WithId) => void;
-  updateRecord: <K extends keyof Database>(
-    key: K,
-    recordId: string,
-    patch: Partial<Database[K][number]>
-  ) => void;
-  removeRecord: <K extends keyof Database>(key: K, recordId: string) => void;
-  resetDb: () => void;
+  carregado: boolean;
   currentUser: Utilizador;
+  /** id do utilizador com sessão iniciada, ou null. */
   session: string | null;
-  login: (email: string, password: string) => boolean;
-  logout: () => void;
+  estado: Estado;
+  /** A conta ainda tem a palavra-passe inicial: tem de a mudar antes de usar a app. */
+  precisaTrocarPassword: boolean;
+  /** Devolve a mensagem de erro, ou null se o login correu bem. */
+  login: (email: string, password: string) => Promise<string | null>;
+  logout: () => Promise<void>;
+  trocarPassword: (atual: string, nova: string) => Promise<string | null>;
   hasPerfil: (...perfis: Perfil[]) => boolean;
+  /**
+   * Executa uma operação na API e, se correr bem, volta a carregar os dados.
+   * Os erros (stock insuficiente, sem permissão…) ficam em `erro` para mostrar ao utilizador.
+   */
+  executar: <T>(operacao: () => Promise<T>) => Promise<T | undefined>;
+  recarregar: () => Promise<void>;
+  erro: string | null;
+  limparErro: () => void;
 }
 
 const DbContext = createContext<DbContextValue | null>(null);
 
-export function DbProvider({ children }: { children: ReactNode }) {
-  const [db, setDb] = useState<Database>(loadDb);
-  const [session, setSession] = useState<string | null>(() => localStorage.getItem(SESSION_KEY));
+const SEM_UTILIZADOR: Utilizador = {
+  id: "", nome: "", perfil: "Voluntário — distribuição", email: "", ativo: false, ultimoAcesso: null,
+};
 
+function paraUtilizador(u: UtilizadorApi): Utilizador {
+  return { ...u, perfil: u.perfil as Perfil };
+}
+
+// Versões anteriores guardavam todos os dados (e as palavras-passe) em localStorage.
+// Agora vivem no servidor: apaga-se o que ficou nos browsers para não deixar dados pessoais para trás.
+for (const chave of ["sgs-sao-nicolau:db:v1", "sgs-sao-nicolau:db:v2", "sgs-sao-nicolau:sessao", "sgs-sao-nicolau:sessao:v2"]) {
+  try {
+    localStorage.removeItem(chave);
+  } catch {
+    /* localStorage indisponível */
+  }
+}
+
+function DbProviderInterno({ children }: { children: ReactNode }) {
+  const client = useQueryClient();
+  const [estado, setEstado] = useState<Estado>("a-carregar");
+  const [utilizador, setUtilizador] = useState<Utilizador | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+
+  const terminarSessaoLocal = useCallback(() => {
+    definirToken(null);
+    setUtilizador(null);
+    setEstado("anonimo");
+    client.clear();
+  }, [client]);
+
+  // Ao abrir a app: se o cookie de refresh ainda for válido, a sessão continua.
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
-  }, [db]);
+    let ativo = true;
+    aoSessaoExpirar(() => {
+      if (ativo) terminarSessaoLocal();
+    });
+    renovarSessao().then((dados) => {
+      if (!ativo) return;
+      if (dados) {
+        setUtilizador(paraUtilizador(dados.utilizador));
+        setEstado("autenticado");
+      } else {
+        setEstado("anonimo");
+      }
+    });
+    return () => {
+      ativo = false;
+      aoSessaoExpirar(null);
+    };
+  }, [terminarSessaoLocal]);
 
-  useEffect(() => {
-    if (session) localStorage.setItem(SESSION_KEY, session);
-    else localStorage.removeItem(SESSION_KEY);
-  }, [session]);
+  const precisaTrocarPassword = Boolean(utilizador?.mustChangePassword);
 
-  const currentUser = useMemo<Utilizador>(() => {
-    return db.utilizadores.find((u) => u.id === session) ?? db.utilizadores[0];
-  }, [db.utilizadores, session]);
+  const bootstrap = useQuery({
+    queryKey: ["bootstrap", utilizador?.id],
+    queryFn: () => api.get<Database>("/bootstrap"),
+    enabled: estado === "autenticado" && !precisaTrocarPassword,
+    staleTime: 30_000,
+  });
 
-  useEffect(() => {
-    // Se a conta associada à sessão foi removida ou desativada entretanto
-    // (ex.: noutro separador), a sessão tem de cair — nunca continuar
-    // silenciosamente como se fosse outro utilizador (o primeiro da lista).
-    if (session && !db.utilizadores.some((u) => u.id === session && u.ativo)) {
-      setSession(null);
-    }
-  }, [session, db.utilizadores]);
+  const recarregar = useCallback(async () => {
+    await client.invalidateQueries({ queryKey: ["bootstrap"] });
+  }, [client]);
 
-  const addRecord = useCallback<DbContextValue["addRecord"]>((key, record) => {
-    setDb((prev) => ({
-      ...prev,
-      [key]: [...(prev[key] as WithId[]), record],
-    }));
-  }, []);
-
-  const updateRecord = useCallback<DbContextValue["updateRecord"]>((key, recordId, patch) => {
-    setDb((prev) => ({
-      ...prev,
-      [key]: (prev[key] as WithId[]).map((item) =>
-        item.id === recordId ? { ...item, ...patch } : item
-      ),
-    }));
-  }, []);
-
-  const removeRecord = useCallback<DbContextValue["removeRecord"]>((key, recordId) => {
-    setDb((prev) => ({
-      ...prev,
-      [key]: (prev[key] as WithId[]).filter((item) => item.id !== recordId),
-    }));
-  }, []);
-
-  const resetDb = useCallback(() => {
-    const seeded = buildSeed();
-    setSession(null);
-    setDb(seeded);
-    localStorage.removeItem(LEGACY_STORAGE_KEY);
-    localStorage.removeItem(LEGACY_SESSION_KEY);
-  }, []);
-
-  const login = useCallback<DbContextValue["login"]>(
-    (email, password) => {
-      const emailNormalizado = email.trim().toLowerCase();
-      const encontrado = db.utilizadores.find(
-        (u) => u.ativo && u.email.toLowerCase() === emailNormalizado && u.password === password
-      );
-      if (!encontrado) return false;
-      setSession(encontrado.id);
-      updateRecord("utilizadores", encontrado.id, {
-        ultimoAcesso: hojeISO(),
-      });
-      return true;
+  const executar = useCallback<DbContextValue["executar"]>(
+    async (operacao) => {
+      setErro(null);
+      try {
+        const resultado = await operacao();
+        await recarregar();
+        return resultado;
+      } catch (e) {
+        setErro(e instanceof ApiError ? e.message : "Ocorreu um erro inesperado.");
+        // Se a operação falhou por o estado ter mudado (ex.: stock), mostra os dados atuais.
+        await recarregar().catch(() => undefined);
+        return undefined;
+      }
     },
-    [db.utilizadores, updateRecord]
+    [recarregar],
   );
 
-  const logout = useCallback(() => setSession(null), []);
+  const login = useCallback<DbContextValue["login"]>(async (email, password) => {
+    try {
+      const u = await auth.login(email, password);
+      setUtilizador(paraUtilizador(u));
+      setEstado("autenticado");
+      setErro(null);
+      return null;
+    } catch (e) {
+      return e instanceof ApiError ? e.message : "Não foi possível iniciar sessão.";
+    }
+  }, []);
 
+  const logout = useCallback(async () => {
+    await auth.logout().catch(() => undefined);
+    terminarSessaoLocal();
+  }, [terminarSessaoLocal]);
+
+  const trocarPassword = useCallback<DbContextValue["trocarPassword"]>(async (atual, nova) => {
+    try {
+      await auth.trocarPassword(atual, nova);
+      setUtilizador((u) => (u ? { ...u, mustChangePassword: false } : u));
+      return null;
+    } catch (e) {
+      return e instanceof ApiError ? e.message : "Não foi possível mudar a palavra-passe.";
+    }
+  }, []);
+
+  const currentUser = utilizador ?? SEM_UTILIZADOR;
   const hasPerfil = useCallback<DbContextValue["hasPerfil"]>(
     (...perfis) => perfis.includes(currentUser.perfil),
-    [currentUser.perfil]
+    [currentUser.perfil],
   );
 
-  const value: DbContextValue = {
-    db,
-    addRecord,
-    updateRecord,
-    removeRecord,
-    resetDb,
-    currentUser,
-    session,
-    login,
-    logout,
-    hasPerfil,
-  };
+  const value = useMemo<DbContextValue>(
+    () => ({
+      db: bootstrap.data ?? BASE_VAZIA,
+      carregado: Boolean(bootstrap.data),
+      currentUser,
+      session: utilizador?.id ?? null,
+      estado,
+      precisaTrocarPassword,
+      login,
+      logout,
+      trocarPassword,
+      hasPerfil,
+      executar,
+      recarregar,
+      erro,
+      limparErro: () => setErro(null),
+    }),
+    [bootstrap.data, currentUser, utilizador?.id, estado, precisaTrocarPassword, login, logout, trocarPassword, hasPerfil, executar, recarregar, erro],
+  );
 
   return <DbContext.Provider value={value}>{children}</DbContext.Provider>;
+}
+
+const queryClient = new QueryClient({
+  defaultOptions: { queries: { retry: false, refetchOnWindowFocus: true } },
+});
+
+export function DbProvider({ children }: { children: ReactNode }) {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <DbProviderInterno>{children}</DbProviderInterno>
+    </QueryClientProvider>
+  );
 }
 
 export function useDb(): DbContextValue {

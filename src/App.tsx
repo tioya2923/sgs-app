@@ -3,6 +3,8 @@ import { DbProvider, useDb } from "./store/db";
 import { InstallPrompt } from "./components/InstallPrompt";
 import { Layout } from "./components/Layout";
 import { Login } from "./components/Login";
+import { TrocarPassword } from "./components/TrocarPassword";
+import { ErroApi } from "./components/ErroApi";
 import { NAV, podeAceder } from "./lib/nav";
 import { Painel } from "./pages/Painel";
 import { PortaAberta } from "./pages/PortaAberta";
@@ -119,9 +121,20 @@ function Rotas() {
 }
 
 function AuthGate() {
-  const { session } = useDb();
-  if (!session) return <Login />;
+  const { estado, precisaTrocarPassword, carregado } = useDb();
+  if (estado === "a-carregar") return <EcraCarregar />;
+  if (estado === "anonimo") return <Login />;
+  if (precisaTrocarPassword) return <TrocarPassword />;
+  if (!carregado) return <EcraCarregar />;
   return <Rotas />;
+}
+
+function EcraCarregar() {
+  return (
+    <div className="flex min-h-svh items-center justify-center bg-paper text-sm text-ink-soft" role="status">
+      A carregar…
+    </div>
+  );
 }
 
 export function App() {
@@ -129,6 +142,7 @@ export function App() {
     <DbProvider>
       <BrowserRouter basename="/sgs-app">
         <AuthGate />
+        <ErroApi />
         <InstallPrompt />
       </BrowserRouter>
     </DbProvider>

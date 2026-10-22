@@ -24,6 +24,13 @@ O projeto foi criado para oferecer uma interface simples e objetiva para acompan
 - Tailwind CSS
 - Lucide React
 
+## Backend
+
+A aplicação usa uma API própria (pasta [`server/`](server/README.md): Fastify + PostgreSQL + Prisma). Os dados deixaram de
+ficar no browser: login real, permissões aplicadas no servidor e dados partilhados entre dispositivos.
+Arranque primeiro a API (ver `server/README.md`) e depois o frontend. O endereço da API configura-se com `VITE_API_URL`
+(por omissão `http://localhost:3300`; ver `.env.example`).
+
 ## Como executar localmente
 
 1. Instale as dependências:
@@ -50,6 +57,10 @@ npm run build
 Os arquivos prontos para publicação serão gerados na pasta dist.
 
 ## Publicação no GitHub Pages
+
+> O frontend precisa da API publicada algures com HTTPS: defina `VITE_API_URL` no passo de build do workflow.
+> Sem isso, a versão publicada não consegue iniciar sessão.
+
 
 Este projeto já está configurado para publicação automática no GitHub Pages através de um workflow do GitHub Actions. Após o push para a branch main, a aplicação ficará disponível em:
 

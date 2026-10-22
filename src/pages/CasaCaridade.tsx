@@ -15,14 +15,14 @@ import {
   tipoMovimentoTone,
 } from "../components/ui";
 import { formatDate, hojeISO } from "../lib/format";
-import { newId } from "../lib/id";
+import { api } from "../services/api";
 import { UNIDADES } from "../lib/unidades";
-import type { RefeicaoContagem, RefeicaoPresenca, Turno } from "../types";
+import type { Turno } from "../types";
 
 type Tab = "contagem" | "presencas" | "entradas";
 
 export function CasaCaridade() {
-  const { db, currentUser, hasPerfil, addRecord } = useDb();
+  const { db, currentUser, hasPerfil, executar } = useDb();
   const [tab, setTab] = useState<Tab>("contagem");
   const podeRegistar = hasPerfil("Direção", "Técnico de ação social", "Cozinha");
   const armazem = db.armazens.find((a) => a.codigo === "CDC")!;
@@ -44,13 +44,13 @@ export function CasaCaridade() {
       />
 
       {tab === "contagem" && (
-        <Contagem podeRegistar={podeRegistar} onAdicionar={(c) => addRecord("refeicoesContagem", c)} />
+        <Contagem podeRegistar={podeRegistar} onAdicionar={(c) => executar(() => api.post("/refeicoes/contagens", c))} />
       )}
       {tab === "presencas" && (
         <Presencas
           podeRegistar={podeRegistar}
           registadoPor={currentUser.nome}
-          onMarcar={(p) => addRecord("refeicoesPresenca", p)}
+          onMarcar={(p) => executar(() => api.post("/refeicoes/presencas", p))}
         />
       )}
       {tab === "entradas" && (
@@ -65,7 +65,7 @@ function Contagem({
   onAdicionar,
 }: {
   podeRegistar: boolean;
-  onAdicionar: (c: RefeicaoContagem) => void;
+  onAdicionar: (c: { turno: Turno; numPessoas: number; sopas: number; pratos: number; sobremesas: number; pao: number; aguas: number }) => Promise<unknown>;
 }) {
   const { db } = useDb();
   const [aberto, setAberto] = useState(false);
@@ -87,14 +87,10 @@ function Contagem({
   // valor já registado, isso faz-se editando, não acrescentando outra linha).
   const jaRegistadoHoje = contagens.some((c) => c.data === hoje && c.turno === turno);
 
-  function submeter() {
+  async function submeter() {
     if (jaRegistadoHoje) return;
-    onAdicionar({
-      id: newId("rfc"),
-      data: hoje,
-      turno,
-      ...campos,
-    });
+    const ok = await onAdicionar({ turno, ...campos });
+    if (!ok) return;
     setAberto(false);
     setCampos({
       numPessoas: 0,
@@ -184,7 +180,7 @@ function Presencas({
 }: {
   podeRegistar: boolean;
   registadoPor: string;
-  onMarcar: (p: RefeicaoPresenca) => void;
+  onMarcar: (p: { data: string; turno: Turno; processoId: string; modalidade: "Presencial" | "Take-away" }) => Promise<unknown>;
 }) {
   const { db } = useDb();
   const hoje = hojeISO();
@@ -240,14 +236,7 @@ function Presencas({
                   <Button
                     variant="secondary"
                     onClick={() =>
-                      onMarcar({
-                        id: newId("rfp"),
-                        data,
-                        turno,
-                        processoId: p.id,
-                        modalidade: "Presencial",
-                        numDoses: 1,
-                      })
+                      onMarcar({ data, turno, processoId: p.id, modalidade: "Presencial" })
                     }
                   >
                     Presencial
@@ -255,14 +244,7 @@ function Presencas({
                   <Button
                     variant="ghost"
                     onClick={() =>
-                      onMarcar({
-                        id: newId("rfp"),
-                        data,
-                        turno,
-                        processoId: p.id,
-                        modalidade: "Take-away",
-                        numDoses: 1,
-                      })
+                      onMarcar({ data, turno, processoId: p.id, modalidade: "Take-away" })
                     }
                   >
                     Take-away
@@ -288,7 +270,7 @@ function EntradasConsumiveis({
   armazemId: string;
   armazemDesignacao: string;
 }) {
-  const { db, currentUser, hasPerfil, addRecord } = useDb();
+  const { db, hasPerfil, executar } = useDb();
   const podeRegistar = hasPerfil("Direção", "Armazém", "Cozinha");
   const [aberto, setAberto] = useState(false);
   const [artigoId, setArtigoId] = useState(artigos[0]?.id ?? "");
@@ -376,59 +358,21 @@ function EntradasConsumiveis({
           <Button
             variant="primary"
             disabled={ehNovoArtigo && !novoNome.trim()}
-            onClick={() => {
-              let idArtigoFinal = artigoId;
-              if (ehNovoArtigo) {
-                const nomeNovo = novoNome.trim();
-                if (!nomeNovo) return;
-                // Um nome escrito de novo (espaço a mais, maiúscula diferente...)
-                // que já existe neste armazém não deve virar um segundo artigo —
-                // isso partia o stock em dois registos e desacertava os alertas
-                // de mínimo/esgotado.
-                const existente = artigos.find((a) => a.nome.trim().toLowerCase() === nomeNovo.toLowerCase());
-                if (existente) {
-                  idArtigoFinal = existente.id;
-                } else {
-                  idArtigoFinal = newId("art");
-                  addRecord("artigos", {
-                    id: idArtigoFinal,
-                    nome: nomeNovo,
-                    categoria: novaCategoria,
-                    unidade: novaUnidade,
-                    armazemId,
-                    stockMinimo: novoStockMinimo,
-                    consumivel: true,
-                  });
-                }
-              }
-
-              const loteId = newId("lot");
-              addRecord("lotes", {
-                id: loteId,
-                artigoId: idArtigoFinal,
-                quantidade,
-                validade: null,
-                localizacaoFisica: "Copa",
-                estado: "disponível",
-                entrada: hojeISO(),
-              });
-              addRecord("movimentos", {
-                id: newId("mov"),
-                artigoId: idArtigoFinal,
-                loteId,
-                tipo: "entrada",
-                quantidade,
-                data: hojeISO(),
-                origemOuDestino: armazemDesignacao,
-                fornecedor: null,
-                benfeitor: null,
-                documento: null,
-                preco: null,
-                registadoPor: currentUser.nome,
-                referencia: null,
-              });
+            onClick={async () => {
+              if (ehNovoArtigo && !novoNome.trim()) return;
+              // Um nome já existente neste armazém reutiliza o artigo (o servidor garante-o); não duplica.
+              const resultado = await executar(() =>
+                api.post<{ artigo: { id: string } }>("/existencias/entradas", {
+                  armazemId,
+                  ...(ehNovoArtigo
+                    ? { novoArtigo: { nome: novoNome.trim(), categoria: novaCategoria, unidade: novaUnidade, stockMinimo: novoStockMinimo } }
+                    : { artigoId }),
+                  quantidade,
+                }),
+              );
+              if (!resultado) return;
               setAberto(false);
-              setArtigoId(idArtigoFinal);
+              setArtigoId(resultado.artigo.id);
               setQuantidade(1);
               setNovoNome("");
             }}

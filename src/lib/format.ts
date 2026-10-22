@@ -45,6 +45,12 @@ export function formatDateLong(iso: string | null | undefined): string {
 
 export function formatDateTime(iso: string | null | undefined): string {
   if (!iso) return "—";
+  // Instantes que vêm do servidor (com Z ou desvio horário) mostram-se na hora local.
+  if (/(Z|[+-]\d{2}:\d{2})$/.test(iso)) {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "—";
+    return `${formatDate(dataISO(d))}, ${dois(d.getHours())}:${dois(d.getMinutes())}`;
+  }
   const [datePart, timePart] = iso.split("T");
   const base = formatDate(datePart);
   return timePart ? `${base}, ${timePart.slice(0, 5)}` : base;

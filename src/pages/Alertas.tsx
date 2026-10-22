@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useDb } from "../store/db";
-import { alertaVisivel, compararPorGravidade, computeAlertas } from "../lib/alerts";
+import { api } from "../services/api";
 import {
   Badge,
   Button,
@@ -19,28 +19,17 @@ import type { Alerta, EstadoAlerta } from "../types";
 type Filtro = "Ativo" | "Tratado" | "Adiado" | "Todos";
 
 export function Alertas() {
-  const { db, currentUser, addRecord, updateRecord } = useDb();
+  const { db, executar } = useDb();
   const [filtro, setFiltro] = useState<Filtro>("Ativo");
   const [aAdiar, setAAdiar] = useState<Alerta | null>(null);
   const [motivo, setMotivo] = useState("");
 
-  const alertas = useMemo(
-    () =>
-      computeAlertas(db)
-        .filter((a) => alertaVisivel(a, currentUser.perfil, db))
-        .sort(compararPorGravidade),
-    [db, currentUser.perfil]
-  );
+  // O servidor calcula os alertas e só envia os que este perfil pode tratar.
+  const alertas = db.alertas;
   const visiveis = filtro === "Todos" ? alertas : alertas.filter((a) => a.estado === filtro);
 
   function aplicarEstado(alerta: Alerta, estado: EstadoAlerta, motivoAdiamento: string | null) {
-    const existe = db.alertas.some((a) => a.id === alerta.id);
-    const patch = { estado, motivoAdiamento, tratadoPor: currentUser.nome };
-    if (existe) {
-      updateRecord("alertas", alerta.id, patch);
-    } else {
-      addRecord("alertas", { ...alerta, ...patch });
-    }
+    void executar(() => api.put(`/alertas/${encodeURIComponent(alerta.id)}/estado`, { estado, motivoAdiamento }));
   }
 
   const contagens = {

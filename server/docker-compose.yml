@@ -1,0 +1,36 @@
+# API + PostgreSQL. Copie .env.example para .env e preencha os segredos antes de arrancar:
+#   docker compose up -d --build
+services:
+  db:
+    image: postgres:18
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: sgs
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?defina DB_PASSWORD no .env}
+      POSTGRES_DB: sgs
+    volumes:
+      - sgs-pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sgs -d sgs"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://sgs:${DB_PASSWORD}@db:5432/sgs
+      JWT_SECRET: ${JWT_SECRET:?defina JWT_SECRET no .env}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://tioya2923.github.io}
+      COOKIE_SAMESITE: ${COOKIE_SAMESITE:-none}
+      TRUST_PROXY: "true"
+      NODE_ENV: production
+    ports:
+      - "3300:3300"
+
+volumes:
+  sgs-pgdata:

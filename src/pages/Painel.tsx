@@ -1,7 +1,5 @@
-import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import { useDb } from "../store/db";
-import { alertaVisivel, compararPorGravidade, computeAlertas } from "../lib/alerts";
 import { moduloVisivel, podeAceder } from "../lib/nav";
 import { Badge, Card, DataTable, SectionHeading, StatTile, gravidadeTone } from "../components/ui";
 import { formatDate, formatDateLong, hojeISO, inicioMesISO } from "../lib/format";
@@ -33,14 +31,12 @@ export function Painel() {
   const veEntradasGeral = veBancoAlimentos || veResidencia || veCasaCaridade || veBancoRoupa;
   const veEstatisticasMes = veBancoAlimentos || veCasaCaridade || veCasos;
 
-  const alertas = useMemo(
-    () => computeAlertas(db).filter((a) => alertaVisivel(a, perfil, db)),
-    [db, perfil]
-  );
+  // Alertas calculados e filtrados pelo servidor, já ordenados por gravidade.
+  const alertas = db.alertas;
   // A prévia do painel só mostra os primeiros 6 — têm de ser os mais urgentes,
   // não os primeiros a serem gerados (senão um cartão urgente pode ficar fora
   // da vista só por haver mais validades curtas na lista).
-  const alertasAtivos = alertas.filter((a) => a.estado === "Ativo").sort(compararPorGravidade);
+  const alertasAtivos = alertas.filter((a) => a.estado === "Ativo");
 
   const atendimentosHoje = db.atendimentos.filter((a) => a.data === hoje);
   const cabazesHoje = db.entregasCabaz.filter((e) => e.dataPrevista === hoje);

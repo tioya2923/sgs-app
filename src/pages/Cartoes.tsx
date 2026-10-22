@@ -15,7 +15,7 @@ import {
   estadoTone,
 } from "../components/ui";
 import { dataISO, diasAte, formatCurrency, formatDate, hojeISO } from "../lib/format";
-import { newId } from "../lib/id";
+import { api } from "../services/api";
 import type { Cartao } from "../types";
 
 const ORIGENS_FUNDO_BASE = ["Câmara Municipal de Lisboa", "Fundo paroquial", "Doação privada"];
@@ -30,7 +30,7 @@ function estadoEfetivo(c: Cartao): string {
 }
 
 export function Cartoes() {
-  const { db, currentUser, hasPerfil, addRecord, updateRecord } = useDb();
+  const { db, hasPerfil, executar } = useDb();
   const podeGerir = hasPerfil("Direção", "Administrativo");
   const [aberto, setAberto] = useState(false);
   const [aCancelar, setACancelar] = useState<Cartao | null>(null);
@@ -155,8 +155,8 @@ export function Cartoes() {
             </Button>
             <Button
               variant="danger"
-              onClick={() => {
-                if (aCancelar) updateRecord("cartoes", aCancelar.id, { estado: "Cancelado" });
+              onClick={async () => {
+                if (aCancelar) await executar(() => api.post(`/cartoes/${aCancelar.id}/cancelar`));
                 setACancelar(null);
               }}
             >
@@ -168,10 +168,8 @@ export function Cartoes() {
 
       <Modal open={aberto} onClose={() => setAberto(false)} title="Atribuir novo cartão">
         <FormularioCartao
-          registadoPor={currentUser.nome}
-          onSubmeter={(cartao) => {
-            addRecord("cartoes", cartao);
-            setAberto(false);
+          onSubmeter={async (cartao) => {
+            if (await executar(() => api.post("/cartoes", cartao))) setAberto(false);
           }}
         />
       </Modal>
@@ -185,9 +183,8 @@ export function Cartoes() {
                 (p) => p.id === db.processos.find((proc) => proc.id === aEntregar.processoId)?.pessoaId
               )?.nome ?? ""
             }
-            onConfirmar={(patch) => {
-              updateRecord("cartoes", aEntregar.id, { ...patch, estado: "Ativo", provaRececao: true });
-              setAEntregar(null);
+            onConfirmar={async (patch) => {
+              if (await executar(() => api.post(`/cartoes/${aEntregar.id}/entrega`, patch))) setAEntregar(null);
             }}
           />
         )}
@@ -203,7 +200,7 @@ function FormularioEntrega({
 }: {
   cartao: Cartao;
   nomeBeneficiario: string;
-  onConfirmar: (patch: { entregueEm: string; recebidoPor: string }) => void;
+  onConfirmar: (patch: { entregueEm: string; recebidoPor: string }) => void | Promise<void>;
 }) {
   const [recebidoPor, setRecebidoPor] = useState(nomeBeneficiario);
   const [entregueEm, setEntregueEm] = useState(() => hojeISO());
@@ -232,11 +229,9 @@ function FormularioEntrega({
 }
 
 function FormularioCartao({
-  registadoPor,
   onSubmeter,
 }: {
-  registadoPor: string;
-  onSubmeter: (c: ReturnType<typeof useDb>["db"]["cartoes"][number]) => void;
+  onSubmeter: (c: { processoId: string; numero?: string; valor: number; origemFundo: string; validade: string }) => void | Promise<void>;
 }) {
   const { db } = useDb();
   const processosOrdenados = useMemo(
@@ -290,25 +285,10 @@ function FormularioCartao({
       </Field>
       <Button
         variant="primary"
-        onClick={() => {
-          const proc = db.processos.find((p) => p.id === processoId);
-          const pessoa = db.pessoas.find((p) => p.id === proc?.pessoaId);
-          onSubmeter({
-            id: newId("crt"),
-            numero: numero || `PD-${Math.floor(100000 + Math.random() * 900000)}`,
-            agregadoId: pessoa?.agregadoId ?? "",
-            processoId,
-            valor,
-            origemFundo,
-            carregadoEm: hojeISO(),
-            validade,
-            entregueEm: null,
-            recebidoPor: null,
-            provaRececao: false,
-            emitidoPor: registadoPor,
-            estado: "Por entregar",
-          });
-        }}
+        disabled={!processoId || !validade || valor <= 0}
+        onClick={() =>
+          onSubmeter({ processoId, numero: numero.trim() || undefined, valor, origemFundo, validade })
+        }
       >
         Atribuir cartão
       </Button>
