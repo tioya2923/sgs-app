@@ -15,12 +15,11 @@ import {
   Textarea,
   estadoTone,
 } from "../components/ui";
-import { dataISO, formatDate, hojeISO, idade } from "../lib/format";
-import { newId } from "../lib/id";
+import { dataISO, formatDate, idade } from "../lib/format";
+import { api } from "../services/api";
 import type {
   Agregado,
   Atendimento,
-  Contacto,
   EstadoCivil,
   EstadoProcesso,
   Parentesco,
@@ -32,6 +31,14 @@ import type {
 } from "../types";
 
 type Tab = "agregados" | "processos";
+
+/** Sugestão para o campo "Próxima avaliação" ao mudar a periodicidade (o servidor valida e guarda). */
+function calcularProximaAvaliacao(periodicidade: Periodicidade): string {
+  const meses = periodicidade === "Mensal" ? 1 : periodicidade === "Trimestral" ? 3 : 6;
+  const d = new Date();
+  d.setMonth(d.getMonth() + meses);
+  return dataISO(d);
+}
 
 const FREGUESIAS = [
   "Santa Maria Maior",
@@ -62,88 +69,8 @@ const ESTADOS_CIVIS: EstadoCivil[] = [
 
 const PARENTESCOS: Parentesco[] = ["Titular", "Cônjuge", "Filho(a)", "Neto(a)", "Pai/Mãe", "Outro"];
 
-function proximoCodigoAgregado(db: ReturnType<typeof useDb>["db"]): string {
-  const nums = db.agregados
-    .map((a) => parseInt(a.codigo.replace(/\D/g, ""), 10))
-    .filter((n) => !Number.isNaN(n));
-  const proximo = (nums.length ? Math.max(...nums) : 0) + 1;
-  return `AG-${String(proximo).padStart(3, "0")}`;
-}
-
-function proximoNumeroProcesso(db: ReturnType<typeof useDb>["db"]): number {
-  return db.processos.reduce((max, p) => Math.max(max, p.numero), 0) + 1;
-}
-
-function calcularProximaAvaliacao(periodicidade: Periodicidade): string {
-  const meses = periodicidade === "Mensal" ? 1 : periodicidade === "Trimestral" ? 3 : 6;
-  const d = new Date();
-  d.setMonth(d.getMonth() + meses);
-  return dataISO(d);
-}
-
-/**
- * Remove um processo e o que só a ele pertence (atendimentos, documentos,
- * inscrições). Cabazes, cartões, refeições e mensagens já entregues ficam —
- * são registo histórico/financeiro, não desaparecem só porque o processo fechou.
- */
-function eliminarProcessoComCascata(
-  db: ReturnType<typeof useDb>["db"],
-  processo: Processo,
-  removeRecord: ReturnType<typeof useDb>["removeRecord"],
-  updateRecord: ReturnType<typeof useDb>["updateRecord"]
-) {
-  db.atendimentos.filter((a) => a.processoId === processo.id).forEach((a) => removeRecord("atendimentos", a.id));
-  db.documentos.filter((d) => d.processoId === processo.id).forEach((d) => removeRecord("documentos", d.id));
-  db.inscricoes.filter((i) => i.processoId === processo.id).forEach((i) => removeRecord("inscricoes", i.id));
-  updateRecord("pessoas", processo.pessoaId, { temProcessoProprio: false });
-  removeRecord("processos", processo.id);
-}
-
-/**
- * Remove uma pessoa isolada do agregado (ex.: saiu de casa, faleceu).
- * Cascata igual à do processo — cabazes, cartões e refeições já registados
- * mantêm-se como histórico, ligados a um processoId agora órfão.
- */
-function eliminarPessoaComCascata(
-  db: ReturnType<typeof useDb>["db"],
-  pessoa: Pessoa,
-  removeRecord: ReturnType<typeof useDb>["removeRecord"],
-  updateRecord: ReturnType<typeof useDb>["updateRecord"]
-) {
-  const processoDaPessoa = db.processos.find((p) => p.pessoaId === pessoa.id);
-  if (processoDaPessoa) eliminarProcessoComCascata(db, processoDaPessoa, removeRecord, updateRecord);
-  db.contactos.filter((c) => c.pessoaId === pessoa.id).forEach((c) => removeRecord("contactos", c.id));
-  removeRecord("pessoas", pessoa.id);
-  const agregado = db.agregados.find((a) => a.id === pessoa.agregadoId);
-  if (agregado) {
-    updateRecord("agregados", agregado.id, {
-      numPessoas: Math.max(0, agregado.numPessoas - 1),
-      numMenores: Math.max(0, agregado.numMenores - (idade(pessoa.dataNascimento) < 18 ? 1 : 0)),
-    });
-  }
-}
-
-/** Remove um agregado e todas as pessoas e processos que só a ele pertencem. */
-function eliminarAgregadoComCascata(
-  db: ReturnType<typeof useDb>["db"],
-  agregadoId: string,
-  removeRecord: ReturnType<typeof useDb>["removeRecord"],
-  updateRecord: ReturnType<typeof useDb>["updateRecord"]
-) {
-  const pessoasDoAgregado = db.pessoas.filter((p) => p.agregadoId === agregadoId);
-  for (const pessoa of pessoasDoAgregado) {
-    const processosDaPessoa = db.processos.filter((p) => p.pessoaId === pessoa.id);
-    for (const processo of processosDaPessoa) {
-      eliminarProcessoComCascata(db, processo, removeRecord, updateRecord);
-    }
-    db.contactos.filter((c) => c.pessoaId === pessoa.id).forEach((c) => removeRecord("contactos", c.id));
-    removeRecord("pessoas", pessoa.id);
-  }
-  removeRecord("agregados", agregadoId);
-}
-
 export function PortaAberta() {
-  const { db, currentUser, hasPerfil, addRecord, updateRecord, removeRecord } = useDb();
+  const { db, currentUser, hasPerfil, executar } = useDb();
   const [tab, setTab] = useState<Tab>("agregados");
   const [agregadoAbertoId, setAgregadoAbertoId] = useState<string | null>(null);
   const [processoAbertoId, setProcessoAbertoId] = useState<string | null>(null);
@@ -330,9 +257,8 @@ export function PortaAberta() {
           {editarAgregadoAberto ? (
             <EditarAgregadoForm
               agregado={agregadoAberto}
-              onGuardar={(patch) => {
-                updateRecord("agregados", agregadoAberto.id, patch);
-                setEditarAgregadoAberto(false);
+              onGuardar={async (patch) => {
+                if (await executar(() => api.patch(`/agregados/${agregadoAberto.id}`, patch))) setEditarAgregadoAberto(false);
               }}
             />
           ) : (
@@ -372,18 +298,10 @@ export function PortaAberta() {
 
           {adicionarPessoaAberto && (
             <AdicionarPessoaForm
-              agregado={agregadoAberto}
               tecnicos={tecnicosDisponiveis}
               tecnicoAtual={currentUser.nome}
-              onAdicionar={({ pessoa, contacto, processo }) => {
-                addRecord("pessoas", pessoa);
-                updateRecord("agregados", agregadoAberto.id, {
-                  numPessoas: agregadoAberto.numPessoas + 1,
-                  numMenores: agregadoAberto.numMenores + (idade(pessoa.dataNascimento) < 18 ? 1 : 0),
-                });
-                if (contacto) addRecord("contactos", contacto);
-                if (processo) addRecord("processos", processo);
-                setAdicionarPessoaAberto(false);
+              onAdicionar={async (pedido) => {
+                if (await executar(() => api.post(`/agregados/${agregadoAberto.id}/pessoas`, pedido))) setAdicionarPessoaAberto(false);
               }}
             />
           )}
@@ -442,36 +360,16 @@ export function PortaAberta() {
           processoDaPessoa={db.processos.find((p) => p.pessoaId === pessoaAberta.id) ?? null}
           numPessoasNoAgregado={db.pessoas.filter((p) => p.agregadoId === pessoaAberta.agregadoId).length}
           onClose={() => setPessoaAbertaId(null)}
-          onRemover={() => {
-            eliminarPessoaComCascata(db, pessoaAberta, removeRecord, updateRecord);
-            setPessoaAbertaId(null);
+          onRemover={async () => {
+            if (await executar(() => api.delete(`/pessoas/${pessoaAberta.id}`))) setPessoaAbertaId(null);
           }}
-          onAtualizar={(patch) => {
-            const antesMenor = idade(pessoaAberta.dataNascimento) < 18;
-            updateRecord("pessoas", pessoaAberta.id, patch);
-            if (patch.dataNascimento) {
-              const depoisMenor = idade(patch.dataNascimento) < 18;
-              if (antesMenor !== depoisMenor) {
-                updateRecord("agregados", pessoaAberta.agregadoId, {
-                  numMenores: db.agregados.find((a) => a.id === pessoaAberta.agregadoId)!.numMenores + (depoisMenor ? 1 : -1),
-                });
-              }
-            }
-          }}
-          onAbrirProcesso={({ tecnicaReferencia, periodicidade }) => {
-            const novoProcesso: Processo = {
-              id: newId("prc"),
-              numero: proximoNumeroProcesso(db),
-              pessoaId: pessoaAberta.id,
-              tecnicaReferencia,
-              dataAbertura: hojeISO(),
-              estado: "Ativo",
-              periodicidadeReavaliacao: periodicidade,
-              proximaAvaliacao: calcularProximaAvaliacao(periodicidade),
-            };
-            addRecord("processos", novoProcesso);
-            updateRecord("pessoas", pessoaAberta.id, { temProcessoProprio: true });
-          }}
+          // O servidor recalcula o nº de pessoas/menores do agregado.
+          onAtualizar={(patch) => executar(() => api.patch(`/pessoas/${pessoaAberta.id}`, patch))}
+          onAbrirProcesso={(dados) =>
+            executar(() =>
+              api.post(`/pessoas/${pessoaAberta.id}/processo`, { tecnicaReferencia: dados.tecnicaReferencia, periodicidade: dados.periodicidade }),
+            )
+          }
           onVerProcesso={(processoId) => {
             setPessoaAbertaId(null);
             setProcessoAbertoId(processoId);
@@ -505,10 +403,11 @@ export function PortaAberta() {
                   </Button>
                   <Button
                     variant="danger"
-                    onClick={() => {
-                      eliminarAgregadoComCascata(db, agregadoAberto.id, removeRecord, updateRecord);
-                      setEliminarAgregadoConfirmar(false);
-                      setAgregadoAbertoId(null);
+                    onClick={async () => {
+                      if (await executar(() => api.delete(`/agregados/${agregadoAberto.id}`))) {
+                        setEliminarAgregadoConfirmar(false);
+                        setAgregadoAbertoId(null);
+                      }
                     }}
                   >
                     Eliminar agregado
@@ -527,34 +426,23 @@ export function PortaAberta() {
           podeEditar={podeEditar}
           tecnicoAtual={currentUser.nome}
           tecnicos={tecnicosDisponiveis}
-          onRegistarAtendimento={(dados) => {
-            addRecord("atendimentos", {
-              id: newId("ate"),
-              processoId: processoAberto.id,
-              ...dados,
-            });
-          }}
-          onAtualizar={(patch) => updateRecord("processos", processoAberto.id, patch)}
-          onEliminar={() => {
-            eliminarProcessoComCascata(db, processoAberto, removeRecord, updateRecord);
-            setProcessoAbertoId(null);
+          onRegistarAtendimento={(dados) => executar(() => api.post(`/processos/${processoAberto.id}/atendimentos`, dados))}
+          onAtualizar={(patch) => executar(() => api.patch(`/processos/${processoAberto.id}`, patch))}
+          onEliminar={async () => {
+            if (await executar(() => api.delete(`/processos/${processoAberto.id}`))) setProcessoAbertoId(null);
           }}
         />
       )}
 
       <Modal open={novoAgregadoAberto} onClose={() => setNovoAgregadoAberto(false)} title="Novo agregado" width="max-w-2xl">
         <NovoAgregadoForm
-          codigoSugerido={proximoCodigoAgregado(db)}
-          numeroProcessoSugerido={proximoNumeroProcesso(db)}
           tecnicos={tecnicosDisponiveis}
           tecnicoAtual={currentUser.nome}
-          onCriar={({ agregado, pessoa, contacto, processo }) => {
-            addRecord("agregados", agregado);
-            addRecord("pessoas", pessoa);
-            if (contacto) addRecord("contactos", contacto);
-            if (processo) addRecord("processos", processo);
+          onCriar={async (pedido) => {
+            const criado = await executar(() => api.post<{ agregado: { id: string } }>("/agregados", pedido));
+            if (!criado) return;
             setNovoAgregadoAberto(false);
-            setAgregadoAbertoId(agregado.id);
+            setAgregadoAbertoId(criado.agregado.id);
           }}
         />
       </Modal>
@@ -564,23 +452,21 @@ export function PortaAberta() {
 
 // -------------------------------------------------------- Novo agregado
 
+interface PedidoNovoAgregado {
+  agregado: { morada: string; freguesia: string; situacaoHabitacional: SituacaoHabitacional; rendimentoTotal: number };
+  titular: { nome: string; dataNascimento: string; nacionalidade: string; estadoCivil: EstadoCivil; nif: string };
+  telefone?: string;
+  processo?: { tecnicaReferencia: string; periodicidade: Periodicidade };
+}
+
 function NovoAgregadoForm({
-  codigoSugerido,
-  numeroProcessoSugerido,
   tecnicos,
   tecnicoAtual,
   onCriar,
 }: {
-  codigoSugerido: string;
-  numeroProcessoSugerido: number;
   tecnicos: ReturnType<typeof useDb>["db"]["utilizadores"];
   tecnicoAtual: string;
-  onCriar: (dados: {
-    agregado: Agregado;
-    pessoa: Pessoa;
-    contacto: Contacto | null;
-    processo: Processo | null;
-  }) => void;
+  onCriar: (pedido: PedidoNovoAgregado) => void | Promise<void>;
 }) {
   const [morada, setMorada] = useState("");
   const [freguesia, setFreguesia] = useState(FREGUESIAS[0]);
@@ -604,72 +490,20 @@ function NovoAgregadoForm({
 
   function submeter() {
     if (!podeCriar) return;
-    const hoje = hojeISO();
-    const agregadoId = newId("agr");
-    const pessoaId = newId("pes");
-
-    const agregado: Agregado = {
-      id: agregadoId,
-      codigo: codigoSugerido,
-      morada: morada.trim(),
-      freguesia,
-      situacaoHabitacional: situacao,
-      rendimentoTotal: rendimento,
-      numPessoas: 1,
-      numMenores: idade(dataNascimento) < 18 ? 1 : 0,
-      dataAbertura: hoje,
-    };
-
-    const pessoa: Pessoa = {
-      id: pessoaId,
-      agregadoId,
-      nome: nome.trim(),
-      dataNascimento,
-      nacionalidade,
-      estadoCivil,
-      nif,
-      documentoTipo: "Cartão de Cidadão",
-      documentoNumero: "",
-      documentoValidade: null,
-      parentesco: "Titular",
-      restricoesAlimentares: [],
-      incapacidade: false,
-      temProcessoProprio: abrirProcesso,
-    };
-
-    const contacto: Contacto | null = telefone.trim()
-      ? {
-          id: newId("con"),
-          pessoaId,
-          tipo: "Telemóvel",
-          valor: telefone.trim(),
-          consentimento: true,
-          dataConsentimento: hoje,
-          preferencial: true,
-        }
-      : null;
-
-    const processo: Processo | null = abrirProcesso
-      ? {
-          id: newId("prc"),
-          numero: numeroProcessoSugerido,
-          pessoaId,
-          tecnicaReferencia,
-          dataAbertura: hoje,
-          estado: "Ativo",
-          periodicidadeReavaliacao: periodicidade,
-          proximaAvaliacao: calcularProximaAvaliacao(periodicidade),
-        }
-      : null;
-
-    onCriar({ agregado, pessoa, contacto, processo });
+    // O código do agregado, o nº do processo e as datas são atribuídos pelo servidor.
+    void onCriar({
+      agregado: { morada: morada.trim(), freguesia, situacaoHabitacional: situacao, rendimentoTotal: rendimento },
+      titular: { nome: nome.trim(), dataNascimento, nacionalidade, estadoCivil, nif },
+      telefone: telefone.trim() || undefined,
+      processo: abrirProcesso ? { tecnicaReferencia, periodicidade } : undefined,
+    });
   }
 
   return (
     <div className="space-y-5">
       <div>
         <p className="mb-2 font-mono text-[11px] uppercase tracking-[0.14em] text-ink-soft">
-          Agregado {codigoSugerido}
+          Novo agregado (o código é atribuído automaticamente)
         </p>
         <div className="grid grid-cols-2 gap-3">
           <div className="col-span-2">
@@ -825,17 +659,20 @@ function EditarAgregadoForm({
 // -------------------------------------------------------- Adicionar pessoa
 
 function AdicionarPessoaForm({
-  agregado,
   tecnicos,
   tecnicoAtual,
   onAdicionar,
 }: {
-  agregado: Agregado;
   tecnicos: ReturnType<typeof useDb>["db"]["utilizadores"];
   tecnicoAtual: string;
-  onAdicionar: (dados: { pessoa: Pessoa; contacto: Contacto | null; processo: Processo | null }) => void;
+  onAdicionar: (pedido: {
+    nome: string;
+    dataNascimento: string;
+    nacionalidade: string;
+    parentesco: Parentesco;
+    processo?: { tecnicaReferencia: string; periodicidade: Periodicidade };
+  }) => void | Promise<void>;
 }) {
-  const { db } = useDb();
   const [nome, setNome] = useState("");
   const [dataNascimento, setDataNascimento] = useState("");
   const [nacionalidade, setNacionalidade] = useState("Portuguesa");
@@ -850,40 +687,13 @@ function AdicionarPessoaForm({
 
   function submeter() {
     if (!podeAdicionar) return;
-    const hoje = hojeISO();
-    const pessoaId = newId("pes");
-
-    const pessoa: Pessoa = {
-      id: pessoaId,
-      agregadoId: agregado.id,
+    void onAdicionar({
       nome: nome.trim(),
       dataNascimento,
       nacionalidade,
-      estadoCivil: "Solteiro(a)",
-      nif: "",
-      documentoTipo: "Cartão de Cidadão",
-      documentoNumero: "",
-      documentoValidade: null,
       parentesco,
-      restricoesAlimentares: [],
-      incapacidade: false,
-      temProcessoProprio: abrirProcesso,
-    };
-
-    const processo: Processo | null = abrirProcesso
-      ? {
-          id: newId("prc"),
-          numero: proximoNumeroProcesso(db),
-          pessoaId,
-          tecnicaReferencia,
-          dataAbertura: hoje,
-          estado: "Ativo",
-          periodicidadeReavaliacao: periodicidade,
-          proximaAvaliacao: calcularProximaAvaliacao(periodicidade),
-        }
-      : null;
-
-    onAdicionar({ pessoa, contacto: null, processo });
+      processo: abrirProcesso ? { tecnicaReferencia, periodicidade } : undefined,
+    });
   }
 
   return (
@@ -958,7 +768,7 @@ function ProcessoModal({
   podeEditar: boolean;
   tecnicoAtual: string;
   tecnicos: ReturnType<typeof useDb>["db"]["utilizadores"];
-  onRegistarAtendimento: (dados: Omit<Atendimento, "id" | "processoId">) => void;
+  onRegistarAtendimento: (dados: { tipo: Atendimento["tipo"]; motivo: string; observacoes: string }) => unknown;
   onAtualizar: (patch: Partial<Processo>) => void;
   onEliminar: () => void;
 }) {
@@ -1104,16 +914,8 @@ function ProcessoModal({
           className="mb-4 space-y-3 rounded-xl border border-pine-900/10 bg-pine-50/60 p-4"
           onSubmit={(e) => {
             e.preventDefault();
-            onRegistarAtendimento({
-              data: hojeISO(),
-              tipo,
-              motivo,
-              observacoes,
-              necessidadesDetetadas: [],
-              encaminhamento: "",
-              proximaAvaliacao: processo.proximaAvaliacao,
-              tecnico: tecnicoAtual,
-            });
+            // A data e o técnico (o utilizador da sessão) são definidos pelo servidor.
+            void onRegistarAtendimento({ tipo, motivo, observacoes });
             setMotivo("");
             setObservacoes("");
             setNovoAberto(false);
@@ -1256,7 +1058,7 @@ function PessoaModal({
   onVerProcesso: (processoId: string) => void;
   onRemover: () => void;
 }) {
-  const { db, addRecord, removeRecord } = useDb();
+  const { db, executar } = useDb();
   const contactos = db.contactos.filter((c) => c.pessoaId === pessoa.id);
 
   const [editarAberto, setEditarAberto] = useState(false);
@@ -1381,9 +1183,8 @@ function PessoaModal({
 
         {adicionarContactoAberto && (
           <AdicionarContactoForm
-            onAdicionar={(dados) => {
-              addRecord("contactos", { id: newId("con"), pessoaId: pessoa.id, ...dados });
-              setAdicionarContactoAberto(false);
+            onAdicionar={async (dados) => {
+              if (await executar(() => api.post(`/pessoas/${pessoa.id}/contactos`, dados))) setAdicionarContactoAberto(false);
             }}
           />
         )}
@@ -1398,7 +1199,7 @@ function PessoaModal({
                 {!c.consentimento && <Badge tone="brick">Sem consentimento</Badge>}
               </span>
               {podeEditar && (
-                <Button variant="ghost" onClick={() => removeRecord("contactos", c.id)}>
+                <Button variant="ghost" onClick={() => void executar(() => api.delete(`/contactos/${c.id}`))}>
                   Remover
                 </Button>
               )}
@@ -1468,7 +1269,7 @@ function PessoaModal({
 function AdicionarContactoForm({
   onAdicionar,
 }: {
-  onAdicionar: (dados: Omit<Contacto, "id" | "pessoaId">) => void;
+  onAdicionar: (dados: { tipo: TipoContacto; valor: string; preferencial: boolean; consentimento: boolean }) => void | Promise<void>;
 }) {
   const [tipo, setTipo] = useState<TipoContacto>("Telemóvel");
   const [valor, setValor] = useState("");
@@ -1508,7 +1309,6 @@ function AdicionarContactoForm({
             valor: valor.trim(),
             preferencial,
             consentimento,
-            dataConsentimento: consentimento ? hojeISO() : null,
           })
         }
       >

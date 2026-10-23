@@ -29,6 +29,9 @@ export function agoraLocalISO(d: Date = new Date()): string {
 
 export function formatDate(iso: string | null | undefined): string {
   if (!iso) return "—";
+  // Um instante do servidor (com Z ou desvio horário) passa para a data local antes de se formatar.
+  const instante = /(Z|[+-]\d{2}:\d{2})$/.test(iso) && iso.includes("T") ? new Date(iso) : null;
+  if (instante && !Number.isNaN(instante.getTime())) return dateFmt.format(instante);
   const [datePart] = iso.split("T");
   const d = new Date(datePart + "T00:00:00");
   if (Number.isNaN(d.getTime())) return "—";
@@ -45,6 +48,12 @@ export function formatDateLong(iso: string | null | undefined): string {
 
 export function formatDateTime(iso: string | null | undefined): string {
   if (!iso) return "—";
+  // Instantes que vêm do servidor (com Z ou desvio horário) mostram-se na hora local.
+  if (/(Z|[+-]\d{2}:\d{2})$/.test(iso)) {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "—";
+    return `${formatDate(dataISO(d))}, ${dois(d.getHours())}:${dois(d.getMinutes())}`;
+  }
   const [datePart, timePart] = iso.split("T");
   const base = formatDate(datePart);
   return timePart ? `${base}, ${timePart.slice(0, 5)}` : base;

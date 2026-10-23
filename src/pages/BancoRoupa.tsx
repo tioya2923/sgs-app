@@ -1,17 +1,17 @@
 import { useMemo, useState } from "react";
 import { useDb } from "../store/db";
 import { Button, Callout, Card, DataTable, Field, Input, Modal, SectionHeading, Select, SuggestInput, TabGroup } from "../components/ui";
-import { formatDate, hojeISO } from "../lib/format";
-import { newId } from "../lib/id";
+import { formatDate } from "../lib/format";
 import { sugestoesBenfeitores } from "../lib/sugestoes";
-import type { Artigo, ItemRoupa, Lote, Movimento } from "../types";
+import { api } from "../services/api";
+import type { ItemRoupa } from "../types";
 
 const NOVO_ARTIGO = "__novo__";
 
 type Tab = "entregas" | "entradas";
 
 export function BancoRoupa() {
-  const { db, currentUser, hasPerfil } = useDb();
+  const { db, hasPerfil } = useDb();
   const [tab, setTab] = useState<Tab>("entregas");
   const podeRegistarEntrega = hasPerfil("Direção", "Técnico de ação social", "Voluntário — distribuição");
   const podeRegistarEntrada = hasPerfil("Direção", "Armazém", "Voluntário — distribuição");
@@ -33,7 +33,7 @@ export function BancoRoupa() {
       />
 
       {tab === "entregas" && (
-        <Entregas podeRegistar={podeRegistarEntrega} artigos={artigos} registadoPor={currentUser.nome} />
+        <Entregas podeRegistar={podeRegistarEntrega} artigos={artigos} />
       )}
 
       {tab === "entradas" && (
@@ -42,7 +42,6 @@ export function BancoRoupa() {
           artigos={artigos}
           armazemId={armazem.id}
           armazemDesignacao={armazem.designacao}
-          registadoPor={currentUser.nome}
         />
       )}
     </div>
@@ -54,13 +53,11 @@ export function BancoRoupa() {
 function Entregas({
   podeRegistar,
   artigos,
-  registadoPor,
 }: {
   podeRegistar: boolean;
   artigos: ReturnType<typeof useDb>["db"]["artigos"];
-  registadoPor: string;
 }) {
-  const { db, addRecord, updateRecord } = useDb();
+  const { db, executar } = useDb();
   const [aberto, setAberto] = useState(false);
   const [processoId, setProcessoId] = useState(db.processos[0]?.id ?? "");
   const [itens, setItens] = useState<ItemRoupa[]>([{ tipo: artigos[0]?.nome ?? "", tamanho: "M", quantidade: 1, estado: "Bom estado" }]);
@@ -96,57 +93,11 @@ function Entregas({
 
   const itensInsuficientes = itens.filter((it, idx) => it.quantidade > disponivelParaLinha(idx));
 
-  function submeter() {
+  async function submeter() {
     if (itensInsuficientes.length > 0) return;
-    const processo = db.processos.find((p) => p.id === processoId);
-
-    // Mapa de quantidades ainda por gastar em cada lote, atualizado à medida
-    // que cada linha da entrega consome — sem isto, duas linhas do mesmo
-    // artigo liam sempre a mesma quantidade "antes de gastar" e a segunda
-    // sobrescrevia o desconto da primeira em vez de somar a ela.
-    const restantePorLote = new Map(db.lotes.map((l) => [l.id, l.quantidade]));
-
-    for (const item of itens) {
-      const artigo = artigos.find((a) => a.nome === item.tipo);
-      if (!artigo) continue;
-      let restante = item.quantidade;
-      const lotesDoArtigo = db.lotes
-        .filter((l) => l.artigoId === artigo.id && l.estado === "disponível")
-        .sort((a, b) => a.entrada.localeCompare(b.entrada));
-      for (const lote of lotesDoArtigo) {
-        if (restante <= 0) break;
-        const disponivelNoLote = restantePorLote.get(lote.id) ?? 0;
-        if (disponivelNoLote <= 0) continue;
-        const retirar = Math.min(restante, disponivelNoLote);
-        const novaQuantidade = disponivelNoLote - retirar;
-        restantePorLote.set(lote.id, novaQuantidade);
-        updateRecord("lotes", lote.id, { quantidade: novaQuantidade });
-        addRecord("movimentos", {
-          id: newId("mov"),
-          artigoId: artigo.id,
-          loteId: lote.id,
-          tipo: "saída",
-          quantidade: retirar,
-          data: hojeISO(),
-          origemOuDestino: `Entrega de roupa — processo nº ${processo?.numero ?? "—"}`,
-          fornecedor: null,
-          benfeitor: null,
-          documento: null,
-          preco: null,
-          registadoPor,
-          referencia: processo ? String(processo.numero) : null,
-        });
-        restante -= retirar;
-      }
-    }
-
-    addRecord("entregasRoupa", {
-      id: newId("erp"),
-      processoId,
-      data: hojeISO(),
-      artigos: itens,
-      registadoPor,
-    });
+    // O servidor desconta o stock lote a lote e regista a entrega numa só transação.
+    const ok = await executar(() => api.post("/roupa/entregas", { processoId, itens }));
+    if (!ok) return;
     setAberto(false);
     setItens([{ tipo: artigos[0]?.nome ?? "", tamanho: "M", quantidade: 1, estado: "Bom estado" }]);
   }
@@ -271,17 +222,15 @@ function Entradas({
   artigos,
   armazemId,
   armazemDesignacao,
-  registadoPor,
 }: {
   podeRegistar: boolean;
   artigos: ReturnType<typeof useDb>["db"]["artigos"];
   armazemId: string;
   armazemDesignacao: string;
-  registadoPor: string;
 }) {
-  const { db, addRecord } = useDb();
+  const { db, executar } = useDb();
   const [aberto, setAberto] = useState(false);
-  const [artigoId, setArtigoId] = useState(artigos[0]?.id ?? "");
+  const [artigoId, setArtigoId] = useState(artigos[0]?.id ?? NOVO_ARTIGO);
   const [quantidade, setQuantidade] = useState(1);
   const [benfeitor, setBenfeitor] = useState("");
   const [novoNome, setNovoNome] = useState("");
@@ -298,60 +247,22 @@ function Entradas({
 
   const sugestoesDoador = useMemo(() => sugestoesBenfeitores(entradas), [entradas]);
 
-  function submeter() {
-    let idArtigoFinal = artigoId;
-    if (ehNovoArtigo) {
-      const nomeNovo = novoNome.trim();
-      if (!nomeNovo) return;
-      // Um nome escrito de novo (espaço a mais, maiúscula diferente...) que já
-      // existe neste armazém não deve virar um segundo artigo — isso partia o
-      // stock em dois registos e desacertava os alertas de mínimo/esgotado.
-      const existente = artigos.find((a) => a.nome.trim().toLowerCase() === nomeNovo.toLowerCase());
-      if (existente) {
-        idArtigoFinal = existente.id;
-      } else {
-        const novoArtigo: Artigo = {
-          id: newId("art"),
-          nome: nomeNovo,
-          categoria: novaCategoria,
-          unidade: "un",
-          armazemId,
-          stockMinimo: novoStockMinimo,
-          consumivel: false,
-        };
-        addRecord("artigos", novoArtigo);
-        idArtigoFinal = novoArtigo.id;
-      }
-    }
-
-    const lote: Lote = {
-      id: newId("lot"),
-      artigoId: idArtigoFinal,
-      quantidade,
-      validade: null,
-      localizacaoFisica: "Arrecadação",
-      estado: "disponível",
-      entrada: hojeISO(),
-    };
-    addRecord("lotes", lote);
-    addRecord("movimentos", {
-      id: newId("mov"),
-      artigoId: idArtigoFinal,
-      loteId: lote.id,
-      tipo: "entrada",
-      quantidade,
-      data: lote.entrada,
-      origemOuDestino: armazemDesignacao,
-      fornecedor: null,
-      benfeitor: benfeitor || null,
-      documento: null,
-      preco: null,
-      registadoPor,
-      referencia: null,
-    } satisfies Movimento);
-
+  async function submeter() {
+    if (ehNovoArtigo && !novoNome.trim()) return;
+    // Um nome já existente neste armazém reutiliza o artigo (o servidor garante-o); não duplica.
+    const resultado = await executar(() =>
+      api.post<{ artigo: { id: string } }>("/existencias/entradas", {
+        armazemId,
+        ...(ehNovoArtigo
+          ? { novoArtigo: { nome: novoNome.trim(), categoria: novaCategoria, unidade: "un", stockMinimo: novoStockMinimo, consumivel: false } }
+          : { artigoId }),
+        quantidade,
+        benfeitor: benfeitor || null,
+      }),
+    );
+    if (!resultado) return;
     setAberto(false);
-    setArtigoId(idArtigoFinal);
+    setArtigoId(resultado.artigo.id);
     setQuantidade(1);
     setBenfeitor("");
     setNovoNome("");

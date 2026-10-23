@@ -15,7 +15,7 @@ import {
   estadoTone,
 } from "../components/ui";
 import { agoraLocalISO, formatCurrency, formatDateTime } from "../lib/format";
-import { newId } from "../lib/id";
+import { api } from "../services/api";
 import type { CanalMensagem, EstadoEntregaMensagem, Mensagem } from "../types";
 
 const MODELOS: Record<string, string> = {
@@ -35,12 +35,12 @@ const PALAVRAS_SENSIVEIS = ["saúde", "doença", "doente", "dívida", "valor", "
 // "Agendada" cuja hora já passou tem de se mostrar como Enviada, senão fica
 // para sempre "Agendada" mesmo muito depois de já dever ter saído.
 function estadoEfetivo(m: Mensagem): EstadoEntregaMensagem {
-  if (m.estadoEntrega === "Agendada" && m.agendada <= agoraLocalISO()) return "Enviada";
+  if (m.estadoEntrega === "Agendada" && new Date(m.agendada) <= new Date()) return "Enviada";
   return m.estadoEntrega;
 }
 
 export function Mensagens() {
-  const { db, currentUser, addRecord, removeRecord } = useDb();
+  const { db, currentUser, executar } = useDb();
   const [aberto, setAberto] = useState(false);
   const [aCancelar, setACancelar] = useState<Mensagem | null>(null);
 
@@ -137,8 +137,8 @@ export function Mensagens() {
             </Button>
             <Button
               variant="danger"
-              onClick={() => {
-                if (aCancelar) removeRecord("mensagens", aCancelar.id);
+              onClick={async () => {
+                if (aCancelar) await executar(() => api.delete(`/mensagens/${aCancelar.id}`));
                 setACancelar(null);
               }}
             >
@@ -151,15 +151,23 @@ export function Mensagens() {
       <Modal open={aberto} onClose={() => setAberto(false)} title="Nova mensagem" width="max-w-xl">
         <NovaMensagem
           onFechar={() => setAberto(false)}
-          onEnviar={(msgs) => {
-            msgs.forEach((m) => addRecord("mensagens", m));
-            setAberto(false);
+          onEnviar={async (pedido) => {
+            if (await executar(() => api.post("/mensagens", pedido))) setAberto(false);
           }}
           registadoPor={currentUser.nome}
         />
       </Modal>
     </div>
   );
+}
+
+interface PedidoMensagem {
+  destinatarios: "todos" | { processoId: string };
+  canal: CanalMensagem;
+  modelo: string;
+  conteudoFinal: string;
+  quando: "agora" | "agendar";
+  agendada?: string;
 }
 
 type ModoDestinatario = "um" | "todos";
@@ -171,7 +179,7 @@ function NovaMensagem({
   registadoPor,
 }: {
   onFechar: () => void;
-  onEnviar: (msgs: Mensagem[]) => void;
+  onEnviar: (pedido: PedidoMensagem) => void | Promise<void>;
   registadoPor: string;
 }) {
   const { db } = useDb();
@@ -235,19 +243,15 @@ function NovaMensagem({
 
   const podeEnviar = modo === "um" ? !semConsentimento : elegiveisTodos.length > 0;
 
-  function construirMensagem(procId: string): Mensagem {
-    const agora = agoraLocalISO();
+  function construirPedido(): PedidoMensagem {
     return {
-      id: newId("msg"),
-      processoId: procId,
+      destinatarios: modo === "um" ? { processoId } : "todos",
       canal,
       modelo: modeloNome,
       conteudoFinal: conteudo,
-      agendada: quando === "agora" ? agora : agendada,
-      enviada: quando === "agora" ? agora : null,
-      estadoEntrega: quando === "agora" ? "Enviada" : "Agendada",
-      resposta: null,
-      custo: canal === "SMS" ? 0.05 : 0,
+      quando,
+      // O campo datetime-local é hora local sem fuso: convertemos para um instante absoluto.
+      ...(quando === "agendar" ? { agendada: new Date(agendada).toISOString() } : {}),
     };
   }
 
@@ -371,13 +375,7 @@ function NovaMensagem({
         <Button
           variant="primary"
           disabled={!podeEnviar}
-          onClick={() =>
-            onEnviar(
-              modo === "um"
-                ? [construirMensagem(processoId)]
-                : elegiveisTodos.map((d) => construirMensagem(d.processo.id))
-            )
-          }
+          onClick={() => onEnviar(construirPedido())}
         >
           {(() => {
             const verbo = quando === "agora" ? "Enviar agora" : "Agendar envio";

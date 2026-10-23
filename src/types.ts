@@ -336,9 +336,9 @@ export interface Utilizador {
   nome: string;
   perfil: Perfil;
   email: string;
-  password: string;
   ativo: boolean;
   ultimoAcesso: string | null;
+  mustChangePassword?: boolean;
 }
 
 export interface Database {

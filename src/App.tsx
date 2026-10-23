@@ -3,6 +3,8 @@ import { DbProvider, useDb } from "./store/db";
 import { InstallPrompt } from "./components/InstallPrompt";
 import { Layout } from "./components/Layout";
 import { Login } from "./components/Login";
+import { TrocarPassword } from "./components/TrocarPassword";
+import { ErroApi } from "./components/ErroApi";
 import { NAV, podeAceder } from "./lib/nav";
 import { Painel } from "./pages/Painel";
 import { PortaAberta } from "./pages/PortaAberta";
@@ -119,16 +121,46 @@ function Rotas() {
 }
 
 function AuthGate() {
-  const { session } = useDb();
-  if (!session) return <Login />;
+  const { estado, precisaTrocarPassword, carregado, erroCarregar } = useDb();
+  if (estado === "a-carregar") return <EcraCarregar />;
+  if (estado === "anonimo") return <Login />;
+  if (precisaTrocarPassword) return <TrocarPassword />;
+  if (!carregado && erroCarregar) return <EcraErroCarregar />;
+  if (!carregado) return <EcraCarregar />;
   return <Rotas />;
+}
+
+function EcraErroCarregar() {
+  const { erroCarregar, recarregar, logout } = useDb();
+  return (
+    <div className="flex min-h-svh flex-col items-center justify-center gap-4 bg-paper px-6 text-center" role="alert">
+      <p className="max-w-md text-sm text-ink">{erroCarregar}</p>
+      <div className="flex gap-2">
+        <button onClick={() => void recarregar()} className="rounded-lg bg-pine-800 px-4 py-2 text-sm font-medium text-pine-50 hover:bg-pine-700">
+          Tentar de novo
+        </button>
+        <button onClick={() => void logout()} className="rounded-lg border border-pine-900/20 px-4 py-2 text-sm font-medium text-ink hover:bg-pine-50">
+          Sair
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function EcraCarregar() {
+  return (
+    <div className="flex min-h-svh items-center justify-center bg-paper text-sm text-ink-soft" role="status">
+      A carregar…
+    </div>
+  );
 }
 
 export function App() {
   return (
     <DbProvider>
-      <BrowserRouter basename="/sgs-app">
+      <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, "")}>
         <AuthGate />
+        <ErroApi />
         <InstallPrompt />
       </BrowserRouter>
     </DbProvider>

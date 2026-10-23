@@ -1,3 +1,4 @@
+// @ts-nocheck — dados de demonstração copiados do frontend (indexação direta de arrays).
 import type {
   Agregado,
   Armazem,
@@ -20,8 +21,8 @@ import type {
   RefeicaoPresenca,
   RegistoAcesso,
   Utilizador,
-} from "../types";
-import { dataISO } from "../lib/format";
+} from "../src/domain/types.js";
+import { dataISO } from "./date.js";
 
 let counter = 0;
 function id(prefix: string): string {

@@ -13,7 +13,7 @@ import {
   Select,
 } from "../components/ui";
 import { formatDate, formatDateTime } from "../lib/format";
-import { newId } from "../lib/id";
+import { api } from "../services/api";
 import type { Perfil, Utilizador } from "../types";
 
 const NIVEIS_ACESSO: { perfil: string; ve: string; edita: string }[] = [
@@ -41,7 +41,7 @@ const PERFIS: Perfil[] = [
 ];
 
 export function Administracao() {
-  const { db, currentUser, addRecord, updateRecord, removeRecord } = useDb();
+  const { db, currentUser, executar } = useDb();
   const [aberto, setAberto] = useState(false);
   const [aRemover, setARemover] = useState<Utilizador | null>(null);
   const [aEditar, setAEditar] = useState<Utilizador | null>(null);
@@ -93,7 +93,7 @@ export function Administracao() {
                   <button
                     disabled={motivo !== true}
                     title={motivo === true ? undefined : motivo}
-                    onClick={() => updateRecord("utilizadores", u.id, { ativo: !u.ativo })}
+                    onClick={() => void executar(() => api.patch(`/utilizadores/${u.id}`, { ativo: !u.ativo }))}
                     className="disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <Badge tone={u.ativo ? "pine" : "brick"}>{u.ativo ? "Ativo" : "Inativo"}</Badge>
@@ -133,9 +133,8 @@ export function Administracao() {
           <EditarUtilizadorForm
             utilizador={aEditar}
             bloquearRebaixamento={ehUnicaDirecaoAtiva(aEditar)}
-            onGuardar={(patch) => {
-              updateRecord("utilizadores", aEditar.id, patch);
-              setAEditar(null);
+            onGuardar={async (patch) => {
+              if (await executar(() => api.patch(`/utilizadores/${aEditar.id}`, patch))) setAEditar(null);
             }}
           />
         )}
@@ -154,8 +153,8 @@ export function Administracao() {
             </Button>
             <Button
               variant="danger"
-              onClick={() => {
-                if (aRemover) removeRecord("utilizadores", aRemover.id);
+              onClick={async () => {
+                if (aRemover) await executar(() => api.delete(`/utilizadores/${aRemover.id}`));
                 setARemover(null);
               }}
             >
@@ -207,9 +206,8 @@ export function Administracao() {
 
       <Modal open={aberto} onClose={() => setAberto(false)} title="Novo utilizador">
         <NovoUtilizador
-          onCriar={(u) => {
-            addRecord("utilizadores", u);
-            setAberto(false);
+          onCriar={async (u) => {
+            if (await executar(() => api.post("/utilizadores", u))) setAberto(false);
           }}
         />
       </Modal>
@@ -224,7 +222,7 @@ function EditarUtilizadorForm({
 }: {
   utilizador: Utilizador;
   bloquearRebaixamento: boolean;
-  onGuardar: (patch: Partial<Utilizador>) => void;
+  onGuardar: (patch: { nome: string; email: string; perfil: Perfil; password?: string }) => void | Promise<void>;
 }) {
   const [nome, setNome] = useState(utilizador.nome);
   const [email, setEmail] = useState(utilizador.email);
@@ -234,7 +232,8 @@ function EditarUtilizadorForm({
 
   const rebaixando = bloquearRebaixamento && perfil !== "Direção";
   const passwordsDiferentes = novaPassword.trim() !== "" && novaPassword !== confirmarPassword;
-  const podeGuardar = nome.trim() && email.trim() && !rebaixando && !passwordsDiferentes;
+  const passwordCurta = novaPassword.trim() !== "" && novaPassword.trim().length < 10;
+  const podeGuardar = nome.trim() && email.trim() && !rebaixando && !passwordsDiferentes && !passwordCurta;
 
   return (
     <div className="space-y-3">
@@ -257,7 +256,7 @@ function EditarUtilizadorForm({
           perfil a {utilizador.nome}.
         </p>
       )}
-      <Field label="Nova palavra-passe" hint="Deixe em branco para manter a palavra-passe atual.">
+      <Field label="Nova palavra-passe" hint="Deixe em branco para manter a atual. Mínimo 10 caracteres; a pessoa terá de a mudar no próximo acesso.">
         <PasswordInput value={novaPassword} onChange={(e) => setNovaPassword(e.target.value)} />
       </Field>
       {novaPassword.trim() && (
@@ -286,7 +285,7 @@ function EditarUtilizadorForm({
   );
 }
 
-function NovoUtilizador({ onCriar }: { onCriar: (u: ReturnType<typeof useDb>["db"]["utilizadores"][number]) => void }) {
+function NovoUtilizador({ onCriar }: { onCriar: (u: { nome: string; email: string; password: string; perfil: Perfil }) => void | Promise<void> }) {
   const [nome, setNome] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -294,7 +293,7 @@ function NovoUtilizador({ onCriar }: { onCriar: (u: ReturnType<typeof useDb>["db
   const [perfil, setPerfil] = useState<Perfil>("Técnico de ação social");
 
   const passwordsDiferentes = password !== confirmarPassword;
-  const podeCriar = nome.trim() && email.trim() && password.trim() && !passwordsDiferentes;
+  const podeCriar = nome.trim() && email.trim() && password.length >= 10 && !passwordsDiferentes;
 
   return (
     <div className="space-y-3">
@@ -304,7 +303,7 @@ function NovoUtilizador({ onCriar }: { onCriar: (u: ReturnType<typeof useDb>["db
       <Field label="Email">
         <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
       </Field>
-      <Field label="Palavra-passe inicial" hint="A pessoa deve alterá-la assim que entrar pela primeira vez.">
+      <Field label="Palavra-passe inicial" hint="Pelo menos 10 caracteres. A pessoa é obrigada a mudá-la no primeiro acesso.">
         <PasswordInput value={password} onChange={(e) => setPassword(e.target.value)} />
       </Field>
       <Field label="Confirmar palavra-passe">
@@ -324,15 +323,7 @@ function NovoUtilizador({ onCriar }: { onCriar: (u: ReturnType<typeof useDb>["db
         variant="primary"
         disabled={!podeCriar}
         onClick={() =>
-          onCriar({
-            id: newId("usr"),
-            nome,
-            perfil,
-            email,
-            password,
-            ativo: true,
-            ultimoAcesso: null,
-          })
+          onCriar({ nome: nome.trim(), perfil, email: email.trim(), password })
         }
       >
         Criar utilizador

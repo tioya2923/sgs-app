@@ -16,18 +16,18 @@ import {
   TabGroup,
   estadoTone,
 } from "../components/ui";
-import { formatDate, diasAte, hojeISO } from "../lib/format";
-import { newId } from "../lib/id";
+import { formatDate, diasAte } from "../lib/format";
+import { api } from "../services/api";
 import { UNIDADES } from "../lib/unidades";
 import { sugestoesBenfeitores } from "../lib/sugestoes";
-import type { Artigo, EntregaCabaz, LinhaModeloCabaz, Lote, Movimento } from "../types";
+import type { LinhaModeloCabaz } from "../types";
 
 type Tab = "montar" | "historico" | "modelos" | "entradas";
 
 const ARMAZEM_CODIGO = "BSA";
 
 export function BancoAlimentos() {
-  const { db, currentUser, hasPerfil, addRecord, updateRecord } = useDb();
+  const { db, hasPerfil, executar } = useDb();
   const [tab, setTab] = useState<Tab>("montar");
   const podeGerirModelos = hasPerfil("Direção", "Técnico de ação social");
   const podeRegistarEntrada = hasPerfil("Direção", "Armazém");
@@ -58,15 +58,8 @@ export function BancoAlimentos() {
       {tab === "montar" && (
         <MontarCabaz
           artigosArmazem={artigosArmazem}
-          registadoPor={currentUser.nome}
           podeComporLivremente={podeComporLivremente}
-          onEntregar={(entrega, consumos) => {
-            addRecord("entregasCabaz", entrega);
-            consumos.forEach(({ lote, movimento }) => {
-              updateRecord("lotes", lote.id, { quantidade: lote.quantidade });
-              addRecord("movimentos", movimento);
-            });
-          }}
+          onEntregar={(pedido) => executar(() => api.post("/cabazes/entregas", pedido))}
         />
       )}
 
@@ -80,12 +73,6 @@ export function BancoAlimentos() {
           artigosArmazem={artigosArmazem}
           armazemId={armazem.id}
           armazemDesignacao={armazem.designacao}
-          registadoPor={currentUser.nome}
-          onRegistar={(lote, movimento, novoArtigo) => {
-            if (novoArtigo) addRecord("artigos", novoArtigo);
-            addRecord("lotes", lote);
-            addRecord("movimentos", movimento);
-          }}
         />
       )}
     </div>
@@ -103,14 +90,12 @@ function escolherModeloPorTamanho(numPessoas: number, modelos: ReturnType<typeof
 
 function MontarCabaz({
   artigosArmazem,
-  registadoPor,
   podeComporLivremente,
   onEntregar,
 }: {
   artigosArmazem: ReturnType<typeof useDb>["db"]["artigos"];
-  registadoPor: string;
   podeComporLivremente: boolean;
-  onEntregar: (entrega: EntregaCabaz, consumos: { lote: Lote; movimento: Movimento }[]) => void;
+  onEntregar: (pedido: { agregadoId: string; modeloId: string; linhas: LinhaModeloCabaz[] }) => Promise<unknown>;
 }) {
   const { db } = useDb();
   const [agregadoId, setAgregadoId] = useState("");
@@ -186,59 +171,11 @@ function MontarCabaz({
 
   const linhasInsuficientes = linhas.filter((l) => l.quantidade > estoqueDisponivel(l.artigoId));
 
-  function confirmarEntrega() {
+  async function confirmarEntrega() {
     if (!agregado || !processo || !modelo || linhasInsuficientes.length > 0) return;
-    const consumos: { lote: Lote; movimento: Movimento }[] = [];
-
-    for (const linha of linhas) {
-      let restante = linha.quantidade;
-      const lotesDisponiveis = db.lotes
-        .filter((l) => l.artigoId === linha.artigoId && l.estado === "disponível" && l.quantidade > 0)
-        .sort((a, b) => (a.validade ?? "9999").localeCompare(b.validade ?? "9999"));
-      for (const lote of lotesDisponiveis) {
-        if (restante <= 0) break;
-        const retirar = Math.min(restante, lote.quantidade);
-        const loteAtualizado = { ...lote, quantidade: lote.quantidade - retirar };
-        consumos.push({
-          lote: loteAtualizado,
-          movimento: {
-            id: newId("mov"),
-            artigoId: linha.artigoId,
-            loteId: lote.id,
-            tipo: "saída",
-            quantidade: retirar,
-            data: hojeISO(),
-            origemOuDestino: `Cabaz — Agregado ${agregado.codigo}`,
-            fornecedor: null,
-            benfeitor: null,
-            documento: null,
-            preco: null,
-            registadoPor,
-            referencia: agregado.codigo,
-          },
-        });
-        restante -= retirar;
-      }
-    }
-
-    onEntregar(
-      {
-        id: newId("ecb"),
-        agregadoId: agregado.id,
-        processoId: processo.id,
-        tipo: "Semanal",
-        modeloId: modelo.id,
-        modeloVersao: modelo.versao,
-        dataPrevista: hojeISO(),
-        dataEfetiva: hojeISO(),
-        levantadoPor: db.pessoas.find((p) => p.agregadoId === agregado.id)?.nome ?? null,
-        registadoPor,
-        estado: "Entregue",
-        observacoes: "",
-        linhas,
-      },
-      consumos
-    );
+    // O servidor desconta o stock (lote que caduca primeiro), regista os movimentos e a entrega numa só transação.
+    const ok = await onEntregar({ agregadoId: agregado.id, modeloId: modelo.id, linhas });
+    if (!ok) return;
     setConfirmado(agregado.codigo);
     setAgregadoId("");
     setLinhas([]);
@@ -466,7 +403,7 @@ function Modelos({
   podeGerir: boolean;
   artigosArmazem: ReturnType<typeof useDb>["db"]["artigos"];
 }) {
-  const { db, updateRecord } = useDb();
+  const { db, executar } = useDb();
   const [abertoId, setAbertoId] = useState<string | null>(null);
   const [aEditar, setAEditar] = useState(false);
   const [linhasEdit, setLinhasEdit] = useState<LinhaModeloCabaz[]>([]);
@@ -480,10 +417,11 @@ function Modelos({
     setAEditar(true);
   }
 
-  function guardarEdicao() {
+  async function guardarEdicao() {
     if (!aberto) return;
-    updateRecord("modelosCabaz", aberto.id, { linhas: linhasEdit, versao: aberto.versao + 1 });
-    setAEditar(false);
+    // Guardar cria a versão seguinte no servidor.
+    const ok = await executar(() => api.patch(`/modelos-cabaz/${aberto.id}`, { linhas: linhasEdit }));
+    if (ok) setAEditar(false);
   }
 
   function atualizarQuantidadeEdit(artigoId: string, quantidade: number) {
@@ -640,19 +578,15 @@ function Entradas({
   artigosArmazem,
   armazemId,
   armazemDesignacao,
-  registadoPor,
-  onRegistar,
 }: {
   podeRegistar: boolean;
   artigosArmazem: ReturnType<typeof useDb>["db"]["artigos"];
   armazemId: string;
   armazemDesignacao: string;
-  registadoPor: string;
-  onRegistar: (lote: Lote, movimento: Movimento, novoArtigo: Artigo | null) => void;
 }) {
-  const { db } = useDb();
+  const { db, executar } = useDb();
   const [aberto, setAberto] = useState(false);
-  const [artigoId, setArtigoId] = useState<string>(artigosArmazem[0]?.id ?? "");
+  const [artigoId, setArtigoId] = useState<string>(artigosArmazem[0]?.id ?? NOVO_ARTIGO);
   const [quantidade, setQuantidade] = useState(1);
   const [validade, setValidade] = useState("");
   const [fornecedor, setFornecedor] = useState("");
@@ -670,63 +604,24 @@ function Entradas({
 
   const ehNovoArtigo = artigoId === NOVO_ARTIGO;
 
-  function submeter() {
-    let novoArtigo: Artigo | null = null;
-    let idArtigoFinal = artigoId;
-
-    if (ehNovoArtigo) {
-      const nomeNovo = novoNome.trim();
-      if (!nomeNovo) return;
-      // Um nome escrito de novo (espaço a mais, maiúscula diferente...) que já
-      // existe neste armazém não deve virar um segundo artigo — isso partia o
-      // stock em dois registos e desacertava os alertas de mínimo/esgotado.
-      const existente = artigosArmazem.find((a) => a.nome.trim().toLowerCase() === nomeNovo.toLowerCase());
-      if (existente) {
-        idArtigoFinal = existente.id;
-      } else {
-        novoArtigo = {
-          id: newId("art"),
-          nome: nomeNovo,
-          categoria: novaCategoria,
-          unidade: novaUnidade,
-          armazemId,
-          stockMinimo: novoStockMinimo,
-          consumivel: true,
-        };
-        idArtigoFinal = novoArtigo.id;
-      }
-    }
-
-    const lote: Lote = {
-      id: newId("lot"),
-      artigoId: idArtigoFinal,
-      quantidade,
-      validade: validade || null,
-      localizacaoFisica: "Prateleira A",
-      estado: "disponível",
-      entrada: hojeISO(),
-    };
-    onRegistar(
-      lote,
-      {
-        id: newId("mov"),
-        artigoId: idArtigoFinal,
-        loteId: lote.id,
-        tipo: "entrada",
+  async function submeter() {
+    if (ehNovoArtigo && !novoNome.trim()) return;
+    // Um nome já existente neste armazém reutiliza o artigo (o servidor garante-o); não duplica.
+    const resultado = await executar(() =>
+      api.post<{ artigo: { id: string } }>("/existencias/entradas", {
+        armazemId,
+        ...(ehNovoArtigo
+          ? { novoArtigo: { nome: novoNome.trim(), categoria: novaCategoria, unidade: novaUnidade, stockMinimo: novoStockMinimo } }
+          : { artigoId }),
         quantidade,
-        data: lote.entrada,
-        origemOuDestino: armazemDesignacao,
+        validade: validade || null,
         fornecedor: fornecedor || null,
-        benfeitor: null,
         documento: documento || null,
-        preco: null,
-        registadoPor,
-        referencia: null,
-      },
-      novoArtigo
+      }),
     );
+    if (!resultado) return;
     setAberto(false);
-    setArtigoId(novoArtigo ? novoArtigo.id : artigosArmazem[0]?.id ?? "");
+    setArtigoId(resultado.artigo.id);
     setQuantidade(1);
     setValidade("");
     setFornecedor("");

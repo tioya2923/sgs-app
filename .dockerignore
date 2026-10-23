@@ -1,0 +1,13 @@
+.git
+.github
+node_modules
+dist
+dev-dist
+.env
+server/node_modules
+server/dist
+server/.env
+server/src/generated
+server/test
+*.pdf
+page_payload.json

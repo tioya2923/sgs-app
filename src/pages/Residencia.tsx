@@ -1,22 +1,21 @@
 import { useState } from "react";
 import { useDb } from "../store/db";
 import { Button, Callout, Card, DataTable, Field, Input, Modal, SectionHeading, Select } from "../components/ui";
-import { formatDate, hojeISO } from "../lib/format";
-import { newId } from "../lib/id";
+import { formatDate } from "../lib/format";
 import { UNIDADES } from "../lib/unidades";
-import type { Artigo, Lote, Movimento } from "../types";
+import { api } from "../services/api";
 
 const NOVO_ARTIGO = "__novo__";
 
 export function Residencia() {
-  const { db, currentUser, hasPerfil, addRecord, updateRecord } = useDb();
+  const { db, hasPerfil, executar } = useDb();
   const armazem = db.armazens.find((a) => a.codigo === "RES")!;
   const artigos = db.artigos.filter((a) => a.armazemId === armazem.id);
   const podeRegistar = hasPerfil("Direção", "Armazém", "Cozinha");
 
   const [modalEntrada, setModalEntrada] = useState(false);
   const [modalSaida, setModalSaida] = useState(false);
-  const [artigoId, setArtigoId] = useState(artigos[0]?.id ?? "");
+  const [artigoId, setArtigoId] = useState(artigos[0]?.id ?? NOVO_ARTIGO);
   const [quantidade, setQuantidade] = useState(1);
   const [validade, setValidade] = useState("");
   const [fornecedor, setFornecedor] = useState("");
@@ -38,91 +37,34 @@ export function Residencia() {
     .reduce((soma, l) => soma + l.quantidade, 0);
   const saidaInsuficiente = quantidade > disponivelArtigoAtual;
 
-  function registarEntrada() {
-    let idArtigoFinal = artigoId;
-    if (ehNovoArtigo) {
-      const nomeNovo = novoNome.trim();
-      if (!nomeNovo) return;
-      // Um nome escrito de novo (espaço a mais, maiúscula diferente...) que já
-      // existe neste armazém não deve virar um segundo artigo — isso partia o
-      // stock em dois registos e desacertava os alertas de mínimo/esgotado.
-      const existente = artigos.find((a) => a.nome.trim().toLowerCase() === nomeNovo.toLowerCase());
-      if (existente) {
-        idArtigoFinal = existente.id;
-      } else {
-        const novoArtigo: Artigo = {
-          id: newId("art"),
-          nome: nomeNovo,
-          categoria: novaCategoria,
-          unidade: novaUnidade,
-          armazemId: armazem.id,
-          stockMinimo: novoStockMinimo,
-          consumivel: true,
-        };
-        addRecord("artigos", novoArtigo);
-        idArtigoFinal = novoArtigo.id;
-      }
-    }
-
-    const lote: Lote = {
-      id: newId("lot"),
-      artigoId: idArtigoFinal,
-      quantidade,
-      validade: validade || null,
-      localizacaoFisica: "Arca / prateleira",
-      estado: "disponível",
-      entrada: hojeISO(),
-    };
-    addRecord("lotes", lote);
-    addRecord("movimentos", {
-      id: newId("mov"),
-      artigoId: idArtigoFinal,
-      loteId: lote.id,
-      tipo: "entrada",
-      quantidade,
-      data: lote.entrada,
-      origemOuDestino: armazem.designacao,
-      fornecedor: fornecedor || null,
-      benfeitor: null,
-      documento: null,
-      preco: null,
-      registadoPor: currentUser.nome,
-      referencia: null,
-    } satisfies Movimento);
+  async function registarEntrada() {
+    if (ehNovoArtigo && !novoNome.trim()) return;
+    // Um nome já existente neste armazém reutiliza o artigo (o servidor garante-o); não duplica.
+    const resultado = await executar(() =>
+      api.post<{ artigo: { id: string } }>("/existencias/entradas", {
+        armazemId: armazem.id,
+        ...(ehNovoArtigo
+          ? { novoArtigo: { nome: novoNome.trim(), categoria: novaCategoria, unidade: novaUnidade, stockMinimo: novoStockMinimo } }
+          : { artigoId }),
+        quantidade,
+        validade: validade || null,
+        fornecedor: fornecedor || null,
+      }),
+    );
+    if (!resultado) return;
     setModalEntrada(false);
-    setArtigoId(idArtigoFinal);
+    setArtigoId(resultado.artigo.id);
     setQuantidade(1);
     setValidade("");
     setFornecedor("");
     setNovoNome("");
   }
 
-  function registarSaida() {
-    let restante = quantidade;
-    const lotesDisponiveis = db.lotes
-      .filter((l) => l.artigoId === artigoId && l.estado === "disponível" && l.quantidade > 0)
-      .sort((a, b) => (a.validade ?? "9999").localeCompare(b.validade ?? "9999"));
-    for (const lote of lotesDisponiveis) {
-      if (restante <= 0) break;
-      const retirar = Math.min(restante, lote.quantidade);
-      updateRecord("lotes", lote.id, { quantidade: lote.quantidade - retirar });
-      addRecord("movimentos", {
-        id: newId("mov"),
-        artigoId,
-        loteId: lote.id,
-        tipo: "saída",
-        quantidade: retirar,
-        data: hojeISO(),
-        origemOuDestino: "Casa da Caridade — cozinha",
-        fornecedor: null,
-        benfeitor: null,
-        documento: null,
-        preco: null,
-        registadoPor: currentUser.nome,
-        referencia: null,
-      } satisfies Movimento);
-      restante -= retirar;
-    }
+  async function registarSaida() {
+    const resultado = await executar(() =>
+      api.post("/existencias/saidas", { artigoId, quantidade, destino: "Casa da Caridade — cozinha" }),
+    );
+    if (!resultado) return;
     setModalSaida(false);
     setQuantidade(1);
   }

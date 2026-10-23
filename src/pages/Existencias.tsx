@@ -1,12 +1,10 @@
 import { useMemo, useState } from "react";
 import { useDb } from "../store/db";
 import { Badge, Button, Card, DataTable, Field, Input, Modal, SectionHeading, Select, StatTile } from "../components/ui";
-import { hojeISO } from "../lib/format";
-import { newId } from "../lib/id";
-import type { Artigo } from "../types";
+import { api } from "../services/api";
 
 export function Existencias() {
-  const { db, currentUser, hasPerfil, addRecord, updateRecord } = useDb();
+  const { db, hasPerfil, executar } = useDb();
   const podeTransferir = hasPerfil("Direção", "Armazém");
   const [filtroArmazem, setFiltroArmazem] = useState<string>("Todos");
   const [modalAberto, setModalAberto] = useState(false);
@@ -92,13 +90,7 @@ export function Existencias() {
       <TransferirModal
         open={modalAberto}
         onClose={() => setModalAberto(false)}
-        registadoPor={currentUser.nome}
-        onTransferir={(op) => {
-          op.updates.forEach(({ loteId, quantidade }) => updateRecord("lotes", loteId, { quantidade }));
-          if (op.novoLote) addRecord("lotes", op.novoLote);
-          if (op.novoArtigo) addRecord("artigos", op.novoArtigo);
-          addRecord("movimentos", op.movimento);
-        }}
+        onTransferir={(b) => executar(() => api.post("/existencias/transferencias", b))}
       />
     </div>
   );
@@ -107,18 +99,11 @@ export function Existencias() {
 function TransferirModal({
   open,
   onClose,
-  registadoPor,
   onTransferir,
 }: {
   open: boolean;
   onClose: () => void;
-  registadoPor: string;
-  onTransferir: (op: {
-    updates: { loteId: string; quantidade: number }[];
-    novoLote: ReturnType<typeof useDb>["db"]["lotes"][number] | null;
-    novoArtigo: Artigo | null;
-    movimento: ReturnType<typeof useDb>["db"]["movimentos"][number];
-  }) => void;
+  onTransferir: (b: { artigoId: string; armazemDestinoId: string; quantidade: number }) => Promise<unknown>;
 }) {
   const { db } = useDb();
   const [artigoOrigemId, setArtigoOrigemId] = useState(db.artigos[0]?.id ?? "");
@@ -126,6 +111,7 @@ function TransferirModal({
     db.armazens.find((a) => a.id !== db.artigos[0]?.armazemId)?.id ?? ""
   );
   const [quantidade, setQuantidade] = useState(1);
+  const [aGuardar, setAGuardar] = useState(false);
 
   const artigoOrigem = db.artigos.find((a) => a.id === artigoOrigemId) ?? null;
   const disponivelOrigem = artigoOrigem
@@ -133,74 +119,11 @@ function TransferirModal({
     : 0;
   const armazensDestino = db.armazens.filter((a) => a.id !== artigoOrigem?.armazemId);
 
-  function submeter() {
-    if (!artigoOrigem) return;
-    const armazemDestino = db.armazens.find((a) => a.id === armazemDestinoId);
-    const armazemOrigem = db.armazens.find((a) => a.id === artigoOrigem.armazemId);
-    if (!armazemDestino || !armazemOrigem) return;
-
-    let restante = quantidade;
-    const updates: { loteId: string; quantidade: number }[] = [];
-    const lotesOrigem = db.lotes
-      .filter((l) => l.artigoId === artigoOrigem.id && l.estado === "disponível" && l.quantidade > 0)
-      .sort((a, b) => (a.validade ?? "9999").localeCompare(b.validade ?? "9999"));
-    for (const lote of lotesOrigem) {
-      if (restante <= 0) break;
-      const retirar = Math.min(restante, lote.quantidade);
-      updates.push({ loteId: lote.id, quantidade: lote.quantidade - retirar });
-      restante -= retirar;
-    }
-    const transferido = quantidade - restante;
-    if (transferido <= 0) {
-      onClose();
-      return;
-    }
-
-    let artigoDestino = db.artigos.find((a) => a.armazemId === armazemDestino.id && a.nome === artigoOrigem.nome);
-    let novoArtigo: Artigo | null = null;
-    if (!artigoDestino) {
-      novoArtigo = {
-        id: newId("art"),
-        nome: artigoOrigem.nome,
-        categoria: artigoOrigem.categoria,
-        unidade: artigoOrigem.unidade,
-        armazemId: armazemDestino.id,
-        stockMinimo: artigoOrigem.stockMinimo,
-        consumivel: artigoOrigem.consumivel,
-      };
-      artigoDestino = novoArtigo;
-    }
-
-    const novoLote = {
-      id: newId("lot"),
-      artigoId: artigoDestino.id,
-      quantidade: transferido,
-      validade: null,
-      localizacaoFisica: "Transferido",
-      estado: "disponível" as const,
-      entrada: hojeISO(),
-    };
-
-    onTransferir({
-      updates,
-      novoLote,
-      novoArtigo,
-      movimento: {
-        id: newId("mov"),
-        artigoId: artigoOrigem.id,
-        loteId: null,
-        tipo: "transferência",
-        quantidade: transferido,
-        data: hojeISO(),
-        origemOuDestino: `${armazemOrigem.designacao} → ${armazemDestino.designacao}`,
-        fornecedor: null,
-        benfeitor: null,
-        documento: null,
-        preco: null,
-        registadoPor,
-        referencia: null,
-      },
-    });
+  async function submeter() {
+    if (!artigoOrigem || !armazemDestinoId) return;
+    setAGuardar(true);
+    await onTransferir({ artigoId: artigoOrigem.id, armazemDestinoId, quantidade });
+    setAGuardar(false);
     onClose();
     setQuantidade(1);
   }
@@ -255,7 +178,7 @@ function TransferirModal({
         <Button
           variant="primary"
           onClick={submeter}
-          disabled={disponivelOrigem <= 0 || quantidade > disponivelOrigem}
+          disabled={aGuardar || quantidade < 1 || disponivelOrigem <= 0 || quantidade > disponivelOrigem}
         >
           Confirmar transferência
         </Button>

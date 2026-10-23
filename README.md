@@ -24,6 +24,13 @@ O projeto foi criado para oferecer uma interface simples e objetiva para acompan
 - Tailwind CSS
 - Lucide React
 
+## Backend
+
+A aplicação usa uma API própria (pasta [`server/`](server/README.md): Fastify + PostgreSQL + Prisma). Os dados deixaram de
+ficar no browser: login real, permissões aplicadas no servidor e dados partilhados entre dispositivos.
+Arranque primeiro a API (ver `server/README.md`) e depois o frontend. O endereço da API configura-se com `VITE_API_URL`
+(por omissão `http://localhost:3300`; ver `.env.example`).
+
 ## Como executar localmente
 
 1. Instale as dependências:
@@ -49,13 +56,13 @@ npm run build
 
 Os arquivos prontos para publicação serão gerados na pasta dist.
 
-## Publicação no GitHub Pages
+## Publicação
 
-Este projeto já está configurado para publicação automática no GitHub Pages através de um workflow do GitHub Actions. Após o push para a branch main, a aplicação ficará disponível em:
+A aplicação publica-se num só serviço (a API serve também o frontend), com PostgreSQL gerido. Instruções passo a passo em
+[`DEPLOY.md`](DEPLOY.md) (Render via `render.yaml`, Docker Compose ou manual).
 
-```text
-https://tioya2923.github.io/sgs-app/
-```
+O workflow `Deploy to GitHub Pages` continua a existir, mas o site do Pages só funciona se `VITE_API_URL` apontar para uma API
+publicada (e o cookie de sessão é de terceiros, o que o Safari bloqueia). Depois de migrar para o deploy num só serviço, desative-o.
 
 ## Licença
 
