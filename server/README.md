@@ -57,13 +57,9 @@ O frontend (`npm run dev` na raiz) fala com `http://localhost:3300` (variável `
 
 ## Produção
 
-`docker compose up -d --build` (API + PostgreSQL). Defina `DB_PASSWORD`, `JWT_SECRET` e `CORS_ORIGINS` no `.env`.
-
-- O frontend publicado no GitHub Pages está noutro domínio: use HTTPS na API e `COOKIE_SAMESITE=none`. O ideal é servir a API
-  no mesmo site (ex.: `api.` sob o domínio do centro) e usar `lax`.
-- Compile o frontend com `VITE_API_URL=https://<endereço da API>` (no workflow do GitHub Pages).
-- Crie as contas reais pela Administração e **não** corra `db:seed` em produção.
-- Faça cópias de segurança regulares da base de dados (`pg_dump`): contém dados pessoais de pessoas apoiadas (RGPD).
+Ver [`DEPLOY.md`](../DEPLOY.md) na raiz: a API serve também o frontend (mesma origem), com `Dockerfile`, `docker-compose.yml`
+e `render.yaml`. No arranque, o servidor aplica as migrações, cria os armazéns e modelos de cabaz base e, numa base sem
+utilizadores, a primeira conta de Direção (`BOOTSTRAP_ADMIN_EMAIL` / `BOOTSTRAP_ADMIN_PASSWORD`). Nunca corra `db:seed` em produção.
 
 ## Estrutura
 

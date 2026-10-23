@@ -273,7 +273,7 @@ function EntradasConsumiveis({
   const { db, hasPerfil, executar } = useDb();
   const podeRegistar = hasPerfil("Direção", "Armazém", "Cozinha");
   const [aberto, setAberto] = useState(false);
-  const [artigoId, setArtigoId] = useState(artigos[0]?.id ?? "");
+  const [artigoId, setArtigoId] = useState(artigos[0]?.id ?? NOVO_ARTIGO);
   const [quantidade, setQuantidade] = useState(1);
   const [novoNome, setNovoNome] = useState("");
   const [novaCategoria, setNovaCategoria] = useState("Consumível");

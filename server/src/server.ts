@@ -1,10 +1,14 @@
 import { buildApp } from "./app.js";
 import { loadConfig } from "./config.js";
 import { createPrisma } from "./db.js";
+import { garantirDadosBase, garantirPrimeiraDirecao } from "./startup.js";
 
 const config = loadConfig();
 const prisma = createPrisma(config.DATABASE_URL);
 const app = await buildApp(config, prisma);
+
+await garantirDadosBase(prisma);
+await garantirPrimeiraDirecao(prisma, config, app.log);
 
 const encerrar = async (sinal: string) => {
   app.log.info(`${sinal} recebido, a encerrar`);

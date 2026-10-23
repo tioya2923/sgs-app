@@ -56,17 +56,13 @@ npm run build
 
 Os arquivos prontos para publicação serão gerados na pasta dist.
 
-## Publicação no GitHub Pages
+## Publicação
 
-> O frontend precisa da API publicada algures com HTTPS: defina `VITE_API_URL` no passo de build do workflow.
-> Sem isso, a versão publicada não consegue iniciar sessão.
+A aplicação publica-se num só serviço (a API serve também o frontend), com PostgreSQL gerido. Instruções passo a passo em
+[`DEPLOY.md`](DEPLOY.md) (Render via `render.yaml`, Docker Compose ou manual).
 
-
-Este projeto já está configurado para publicação automática no GitHub Pages através de um workflow do GitHub Actions. Após o push para a branch main, a aplicação ficará disponível em:
-
-```text
-https://tioya2923.github.io/sgs-app/
-```
+O workflow `Deploy to GitHub Pages` continua a existir, mas o site do Pages só funciona se `VITE_API_URL` apontar para uma API
+publicada (e o cookie de sessão é de terceiros, o que o Safari bloqueia). Depois de migrar para o deploy num só serviço, desative-o.
 
 ## Licença
 

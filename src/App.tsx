@@ -158,7 +158,7 @@ function EcraCarregar() {
 export function App() {
   return (
     <DbProvider>
-      <BrowserRouter basename="/sgs-app">
+      <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, "")}>
         <AuthGate />
         <ErroApi />
         <InstallPrompt />

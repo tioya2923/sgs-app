@@ -586,7 +586,7 @@ function Entradas({
 }) {
   const { db, executar } = useDb();
   const [aberto, setAberto] = useState(false);
-  const [artigoId, setArtigoId] = useState<string>(artigosArmazem[0]?.id ?? "");
+  const [artigoId, setArtigoId] = useState<string>(artigosArmazem[0]?.id ?? NOVO_ARTIGO);
   const [quantidade, setQuantidade] = useState(1);
   const [validade, setValidade] = useState("");
   const [fornecedor, setFornecedor] = useState("");

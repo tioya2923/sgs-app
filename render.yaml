@@ -1,0 +1,43 @@
+# Blueprint do Render: frontend + API num único serviço (mesma origem, cookies de primeira
+# parte, sem CORS) e PostgreSQL gerido. Ver DEPLOY.md.
+# Em dashboard.render.com: New > Blueprint > ligar este repositório.
+
+databases:
+  # Tem de estar na MESMA região do serviço web: a rede interna do Render
+  # (usada pelo DATABASE_URL) só liga serviços da mesma região.
+  - name: sgs-pg
+    plan: basic-256mb
+    region: frankfurt
+    databaseName: sgs
+    postgresMajorVersion: "17"
+
+services:
+  - type: web
+    name: sgs
+    runtime: docker
+    plan: starter
+    region: frankfurt
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: sgs-pg
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: NODE_ENV
+        value: production
+      # O Render termina o HTTPS num proxy: sem isto o rate-limit veria sempre o mesmo IP.
+      - key: TRUST_PROXY
+        value: "true"
+      # Primeira conta de Direção (só é criada se ainda não houver utilizadores).
+      # Depois do primeiro acesso pode apagar estas duas variáveis.
+      - key: BOOTSTRAP_ADMIN_EMAIL
+        sync: false
+      - key: BOOTSTRAP_ADMIN_PASSWORD
+        sync: false
+      - key: BOOTSTRAP_ADMIN_NAME
+        value: Direção

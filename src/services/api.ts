@@ -1,7 +1,9 @@
 // Cliente da API do SGS. O token de acesso vive só em memória (nunca em
 // localStorage); a sessão sobrevive a um refresh da página através do cookie
 // httpOnly do refresh token, que o servidor rotaciona a cada renovação.
-const BASE = `${(import.meta.env.VITE_API_URL || "http://localhost:3300").replace(/\/$/, "")}/api/v1`;
+// VITE_API_URL vazio/ausente em produção = mesma origem (a API serve o frontend); em desenvolvimento, a API local.
+const API_URL: string = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? "http://localhost:3300" : "");
+const BASE = `${API_URL.replace(/\/$/, "")}/api/v1`;
 
 export class ApiError extends Error {
   status: number;

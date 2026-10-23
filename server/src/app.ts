@@ -1,4 +1,7 @@
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import Fastify, { type FastifyInstance } from "fastify";
+import fastifyStatic from "@fastify/static";
 import { z } from "zod";
 import helmet from "@fastify/helmet";
 import cors from "@fastify/cors";
@@ -54,7 +57,13 @@ export async function buildApp(config: Config, prisma: PrismaClient): Promise<Fa
   app.decorate("prisma", prisma);
   app.decorate("config", config);
 
-  await app.register(helmet);
+  await app.register(helmet, {
+    contentSecurityPolicy: {
+      useDefaults: true,
+      // Em http (desenvolvimento) o navegador não deve forçar https nos pedidos da própria página.
+      directives: config.NODE_ENV === "production" ? {} : { "upgrade-insecure-requests": null },
+    },
+  });
   await app.register(cors, {
     origin: config.CORS_ORIGINS,
     credentials: true,
@@ -113,6 +122,26 @@ export async function buildApp(config: Config, prisma: PrismaClient): Promise<Fa
     },
     { prefix: "/api/v1" },
   );
+
+  if (config.FRONTEND_DIR) {
+    const raiz = resolve(config.FRONTEND_DIR);
+    if (!existsSync(resolve(raiz, "index.html"))) throw new Error(`FRONTEND_DIR não tem index.html: ${raiz}`);
+    await app.register(fastifyStatic, {
+      root: raiz,
+      wildcard: false,
+      // Ficheiros com hash no nome nunca mudam; o resto (index, sw.js, manifest) revalida sempre.
+      setHeaders: (res, caminho) => {
+        const imutavel = /[\\/]assets[\\/]/.test(caminho);
+        res.header("Cache-Control", imutavel ? "public, max-age=31536000, immutable" : "no-cache");
+      },
+    });
+    // Rotas do frontend (React Router) devolvem o index.html; a API e ficheiros em falta dão 404 em JSON.
+    app.setNotFoundHandler((request, reply) => {
+      const pedeHtml = request.headers.accept?.includes("text/html");
+      if (request.method === "GET" && !request.url.startsWith("/api/") && pedeHtml) return reply.sendFile("index.html");
+      return reply.code(404).send({ erro: "nao_encontrado", mensagem: "Não encontrado." });
+    });
+  }
 
   return app;
 }

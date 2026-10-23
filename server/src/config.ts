@@ -1,6 +1,9 @@
 import "dotenv/config";
 import { z } from "zod";
 
+// Variáveis presentes mas vazias (comum em painéis de deploy) contam como não definidas.
+const vazioParaUndefined = <T extends z.ZodType>(t: T) => z.preprocess((v) => (v === "" ? undefined : v), t);
+
 const schema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().int().positive().default(3300),
@@ -22,6 +25,13 @@ const schema = z.object({
   // Cookie do refresh token. Para o frontend noutro domínio (GitHub Pages) usar
   // COOKIE_SAMESITE=none (exige HTTPS).
   COOKIE_SAMESITE: z.enum(["lax", "strict", "none"]).default("lax"),
+  // Pasta com o frontend compilado: se definida, a própria API serve a aplicação (mesma origem,
+  // sem CORS e com cookies de primeira parte). Ver DEPLOY.md.
+  FRONTEND_DIR: vazioParaUndefined(z.string().optional()),
+  // Primeira conta de Direção numa instalação sem utilizadores (ver src/startup.ts).
+  BOOTSTRAP_ADMIN_EMAIL: vazioParaUndefined(z.string().email().optional()),
+  BOOTSTRAP_ADMIN_PASSWORD: vazioParaUndefined(z.string().min(10, "BOOTSTRAP_ADMIN_PASSWORD precisa de pelo menos 10 caracteres").optional()),
+  BOOTSTRAP_ADMIN_NAME: vazioParaUndefined(z.string().optional()).transform((v) => v ?? "Direção"),
 });
 
 export type Config = z.infer<typeof schema>;

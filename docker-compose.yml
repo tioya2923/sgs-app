@@ -1,5 +1,7 @@
-# API + PostgreSQL. Copie .env.example para .env e preencha os segredos antes de arrancar:
+# Aplicação completa (frontend + API) com PostgreSQL, num só comando:
+#   cp .env.docker.example .env   (e preencha os segredos)
 #   docker compose up -d --build
+# A aplicação fica em http://localhost:3300
 services:
   db:
     image: postgres:18
@@ -16,7 +18,7 @@ services:
       timeout: 3s
       retries: 10
 
-  api:
+  app:
     build: .
     restart: unless-stopped
     depends_on:
@@ -25,10 +27,14 @@ services:
     environment:
       DATABASE_URL: postgresql://sgs:${DB_PASSWORD}@db:5432/sgs
       JWT_SECRET: ${JWT_SECRET:?defina JWT_SECRET no .env}
-      CORS_ORIGINS: ${CORS_ORIGINS:-https://tioya2923.github.io}
-      COOKIE_SAMESITE: ${COOKIE_SAMESITE:-none}
-      TRUST_PROXY: "true"
-      NODE_ENV: production
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+      BOOTSTRAP_ADMIN_NAME: ${BOOTSTRAP_ADMIN_NAME:-}
+      # Atrás de um proxy HTTPS (ex.: Caddy/nginx) ponha TRUST_PROXY=true
+      TRUST_PROXY: ${TRUST_PROXY:-false}
+      # Em http (teste local sem HTTPS) a imagem corre como produção e marca os cookies como "secure";
+      # use um proxy HTTPS ou NODE_ENV=development só para experimentar localmente.
+      NODE_ENV: ${NODE_ENV:-production}
     ports:
       - "3300:3300"
 
